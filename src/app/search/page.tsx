@@ -3,7 +3,8 @@ import { LIMITS } from "@/lib/domain/constants";
 import type { Page, SpotSummary } from "@/lib/domain/types";
 import { getRepo } from "@/lib/repo";
 import { spotSearchQuerySchema } from "@/lib/validation/schemas";
-import { EMPTY_QUERY, SearchView, hasCondition, type SearchQuery } from "@/components/search/SearchView";
+import { EMPTY_QUERY, hasCondition, type SearchQuery } from "@/components/search/query";
+import { SearchView } from "@/components/search/SearchView";
 
 export const metadata: Metadata = { title: "スポットを検索" };
 

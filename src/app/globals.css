@@ -40,6 +40,8 @@
 
   /* 下部ナビの高さ（スマホ）。地図やシートの余白計算に使う */
   --bottom-nav-height: 64px;
+  /* 下部ナビが覆う高さ（ナビ ＋ 中央の投稿ボタンのはみ出し分）。本文の下余白に使う */
+  --bottom-nav-clearance: calc(var(--bottom-nav-height) + 1.5rem);
   --header-height: 56px;
 }
 

@@ -4,7 +4,7 @@
  * 出発地・到着地の選択（F-5-1）：「現在地」または「スポット名で検索」。
  * 現在地は getCurrentPosition()、検索は GET /places/search（検索ボタン押下時のみ）。
  */
-import { useId, useState, type FormEvent } from "react";
+import { useId, useState, type KeyboardEvent } from "react";
 import { getCurrentPosition, geolocationErrorMessage } from "@/components/map/useGeolocation";
 import {
   Badge,
@@ -70,8 +70,11 @@ export function PlacePicker({ label, value, onChange, error, disabled, onUnautho
     }
   }
 
-  async function runSearch(e: FormEvent) {
-    e.preventDefault();
+  /**
+   * 検索を実行する。PlanForm の <form> の中で使うため、ここでは <form> を作らない
+   * （form の入れ子は無効な HTML で、ブラウザによっては外側の form が送信されて画面が再読み込みされる）。
+   */
+  async function runSearch() {
     const q = query.trim();
     if (!q) return;
     setSearch({ phase: "loading", q });
@@ -90,6 +93,13 @@ export function PlacePicker({ label, value, onChange, error, disabled, onUnautho
       }
       setSearch({ phase: "error", message: errorMessage(err, "検索に失敗しました") });
     }
+  }
+
+  /** Enter で検索する（外側の form を送信させない） */
+  function onSearchKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    if (!disabled && query.trim().length > 0 && search.phase !== "loading") void runSearch();
   }
 
   function select(c: PlaceCandidate) {
@@ -138,7 +148,7 @@ export function PlacePicker({ label, value, onChange, error, disabled, onUnautho
             ) : null}
           </div>
         ) : (
-          <form onSubmit={(e) => void runSearch(e)} className="flex flex-col gap-3">
+          <div role="search" className="flex flex-col gap-3">
             <div className="flex gap-2">
               <Input
                 aria-label={`${label}を検索`}
@@ -146,10 +156,13 @@ export function PlacePicker({ label, value, onChange, error, disabled, onUnautho
                 value={query}
                 maxLength={100}
                 disabled={disabled}
+                enterKeyHint="search"
                 onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={onSearchKeyDown}
               />
               <Button
-                type="submit"
+                type="button"
+                onClick={() => void runSearch()}
                 variant="secondary"
                 leftIcon="search"
                 loading={search.phase === "loading"}
@@ -171,7 +184,7 @@ export function PlacePicker({ label, value, onChange, error, disabled, onUnautho
                 disabled={disabled}
               />
             ) : null}
-          </form>
+          </div>
         )}
       </div>
     </FormField>

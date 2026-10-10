@@ -63,7 +63,9 @@ const NAV_ITEMS: NavItem[] = [
 
 /**
  * 共通レイアウト。スマホは下部ナビ、PC（lg 以上）は上部ヘッダー。
- * main は flex-1 min-h-0 なので、地図ページは子を flex-1 min-h-0 にすれば全画面になる。
+ * main は flex-auto（内容の高さで伸びる）。flex-1（basis 0）だと body の min-h-full に収まる高さで
+ * 固定され、内容がはみ出して下余白（下部ナビの逃げ）が効かなくなる。
+ * 地図ページ（/）は自分で高さを決める（src/app/page.tsx）。
  */
 export function AppShell({ user, children, headerRight }: AppShellProps) {
   const pathname = usePathname() ?? "/";
@@ -101,7 +103,7 @@ export function AppShell({ user, children, headerRight }: AppShellProps) {
         </div>
       </header>
 
-      <main className="flex min-h-0 flex-1 flex-col pb-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom))] lg:pb-0">
+      <main className="flex flex-auto flex-col pb-[calc(var(--bottom-nav-clearance)+env(safe-area-inset-bottom))] lg:pb-0">
         {children}
       </main>
 

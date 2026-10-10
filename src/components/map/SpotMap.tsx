@@ -25,6 +25,7 @@ import type { RouteStop } from "@/lib/map/route";
 import { applyJapaneseLabels, OPENFREEMAP_STYLE_URL, readCssToken } from "@/lib/map/style";
 import { bboxContains, expandBbox, getInitialView, type MapBbox, type MapView } from "@/lib/map/view";
 import { MapContext, type CurrentLocation, type MapContextValue } from "./MapContext";
+import { configureMapLibreWorker } from "./workerUrl";
 import {
   createClusterElement,
   createLocationDotElement,
@@ -368,6 +369,7 @@ export default function SpotMap({
     const container = containerRef.current;
     if (!container) return;
     const view = initialView ?? getInitialView(null);
+    configureMapLibreWorker();
     const map = new MapLibreMap({
       container,
       style: OPENFREEMAP_STYLE_URL,

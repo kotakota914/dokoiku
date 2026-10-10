@@ -114,3 +114,5 @@ npm run build
 npm run db:validate # ローカル PostGIS で migration を検証
 npm run test:e2e    # 事前に npm run build
 ```
+
+E2E（`e2e/*.spec.ts`）は memory モードの本番ビルドを `127.0.0.1:3100` で起動して実行する（`playwright.config.ts`）。地図のスタイル（OpenFreeMap）はテスト側で最小スタイルに差し替えるため、外部ネットワークが無くても写真ピンなどの DOM マーカーまで確認できる。共通の補助（開発用ログイン、最小 PNG の生成、コンソールエラーの検出）は `e2e/helpers.ts` にある。
