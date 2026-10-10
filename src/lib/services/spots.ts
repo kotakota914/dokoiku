@@ -39,7 +39,10 @@ export function canCreateSpot(accuracyM: number): boolean {
   return accuracyM < LIMITS.gpsAccuracyMaxM;
 }
 
-/** GET /spots/nearby（F-2-6）：現在地から radius 以内を近い順に最大 LIMITS.nearbyMax 件 */
+/**
+ * GET /spots/nearby（F-2-6）：現在地から radius 以内を近い順に最大 LIMITS.nearbyMax 件。
+ * accuracy が省略された（誤差不明）ときは新規スポットを作れない（canCreate: false。Q7）。
+ */
 export async function getNearbySpots(repo: SpotsDeps, q: NearbyQuery): Promise<NearbyResponse> {
   const spots = await repo.spots.nearby({
     lat: q.lat,
@@ -47,7 +50,7 @@ export async function getNearbySpots(repo: SpotsDeps, q: NearbyQuery): Promise<N
     radiusM: q.radius,
     limit: LIMITS.nearbyMax,
   });
-  return { canCreate: canCreateSpot(q.accuracy), spots };
+  return { canCreate: q.accuracy !== undefined && canCreateSpot(q.accuracy), spots };
 }
 
 /** GET /spots/search（F-3-6） */

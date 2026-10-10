@@ -3,13 +3,20 @@
  * - 外部 API を呼ぶ前に checkAndCount() で回数を数え、無料枠の 80%（USAGE_SUSPEND_RATIO）に達したら
  *   停止にして ApiError.suspended（503 FEATURE_SUSPENDED）を投げる。
  * - 期間（日・月）ごとに記録するので、期間が切り替わると自動で再開する（F-8-4）。
+ * - 日単位の上限があるものは、停止判定に使う日の行に加えて年月の行にも回数を記録する（F-8-1。api-10）。
  * - Supabase の容量（Q4 / ADR-0015）は外部ジョブが絶対値を recordAbsoluteUsage() で書き込む。
  *
  * Repository の実装は import せず、ApiUsageRepo の契約だけに依存する。
  */
 import { ApiError } from "@/lib/api/errors";
 import { serverConfig } from "@/lib/config";
-import { FEATURE_LABELS, USAGE_LIMITS, USAGE_SUSPEND_RATIO, type Feature, type UsageKey } from "@/lib/domain/constants";
+import {
+  FEATURE_LABELS,
+  USAGE_LIMITS,
+  USAGE_SUSPEND_RATIO,
+  type Feature,
+  type UsageKey,
+} from "@/lib/domain/constants";
 import type { ApiUsage, SystemStatus } from "@/lib/domain/types";
 import type { ApiUsageRepo } from "@/lib/repo/types";
 import { nowIso, periodKey } from "@/lib/utils/time";
@@ -46,7 +53,12 @@ function describe(key: UsageKey, usage: ApiUsage): string {
  * すでに停止中なら加算せずに例外を投げる（F-8-2「呼び出さず」）。
  * 戻り値は加算後の使用量。
  */
-export async function checkAndCount(repo: ApiUsageRepo, key: UsageKey, by = 1, deps: UsageDeps = {}): Promise<ApiUsage> {
+export async function checkAndCount(
+  repo: ApiUsageRepo,
+  key: UsageKey,
+  by = 1,
+  deps: UsageDeps = {},
+): Promise<ApiUsage> {
   const { provider, feature, limit } = USAGE_LIMITS[key];
   const now = deps.now ?? new Date();
   const notify = deps.notify ?? defaultNotify;
@@ -56,10 +68,17 @@ export async function checkAndCount(repo: ApiUsageRepo, key: UsageKey, by = 1, d
   if (current?.suspendedAt) throw ApiError.suspended(feature, suspendedMessage(feature));
 
   const usage = await repo.increment(provider, feature, period, limit, by);
+  // F-8-1：年月ごとの累計も残す（日単位のキーだけ。停止判定には使わない）
+  if (USAGE_LIMITS[key].period === "day") {
+    await repo.increment(provider, feature, periodKey("month", now), limit, by);
+  }
   if (usage.count >= suspendThreshold(usage.limit)) {
     if (!usage.suspendedAt) {
       await repo.setSuspended(provider, feature, period, nowIso(now));
-      await notify(`無料枠の ${Math.round(USAGE_SUSPEND_RATIO * 100)}% に達したため ${FEATURE_LABELS[feature]} を停止しました。${describe(key, usage)}`, "warn");
+      await notify(
+        `無料枠の ${Math.round(USAGE_SUSPEND_RATIO * 100)}% に達したため ${FEATURE_LABELS[feature]} を停止しました。${describe(key, usage)}`,
+        "warn",
+      );
     }
     throw ApiError.suspended(feature, suspendedMessage(feature));
   }
@@ -73,7 +92,11 @@ export async function isSuspended(repo: ApiUsageRepo, feature: Feature, now = ne
 }
 
 /** 停止中なら ApiError.suspended を投げる（API の入口で使う） */
-export async function assertNotSuspended(repo: ApiUsageRepo, feature: Feature, now = new Date()): Promise<void> {
+export async function assertNotSuspended(
+  repo: ApiUsageRepo,
+  feature: Feature,
+  now = new Date(),
+): Promise<void> {
   if (await isSuspended(repo, feature, now)) throw ApiError.suspended(feature, suspendedMessage(feature));
 }
 
@@ -112,12 +135,18 @@ export async function recordAbsoluteUsage(
   if (over && !wasSuspended) {
     const at = nowIso(now);
     await repo.setSuspended(provider, feature, period, at);
-    await notify(`無料枠の ${Math.round(USAGE_SUSPEND_RATIO * 100)}% に達したため ${FEATURE_LABELS[feature]} を停止しました。${describe(key, usage)}`, "warn");
+    await notify(
+      `無料枠の ${Math.round(USAGE_SUSPEND_RATIO * 100)}% に達したため ${FEATURE_LABELS[feature]} を停止しました。${describe(key, usage)}`,
+      "warn",
+    );
     return { usage: { ...usage, suspendedAt: at }, suspended: true, changed: true };
   }
   if (!over && wasSuspended) {
     await repo.setSuspended(provider, feature, period, null);
-    await notify(`使用量が下がったため ${FEATURE_LABELS[feature]} を再開しました。${describe(key, usage)}`, "info");
+    await notify(
+      `使用量が下がったため ${FEATURE_LABELS[feature]} を再開しました。${describe(key, usage)}`,
+      "info",
+    );
     return { usage: { ...usage, suspendedAt: null }, suspended: false, changed: true };
   }
   return { usage, suspended: wasSuspended, changed: false };

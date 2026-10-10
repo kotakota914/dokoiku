@@ -21,6 +21,9 @@ export function estimateTravel(from: LatLng, to: LatLng, mode: TravelMode): Esti
 }
 
 /** 地点を順に結ぶ LineString（GeoJSON：[lng, lat]） */
-export function straightLine(points: readonly LatLng[]): { type: "LineString"; coordinates: [number, number][] } {
+export function straightLine(points: readonly LatLng[]): {
+  type: "LineString";
+  coordinates: [number, number][];
+} {
   return { type: "LineString", coordinates: points.map((p) => [p.lng, p.lat]) };
 }

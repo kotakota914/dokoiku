@@ -21,7 +21,11 @@ export function roundToStep(minutes: number, step: number): number {
 /** ISO 日時 → 日本時間の時（0〜23） */
 export function jstHour(iso: string): number {
   const d = new Date(iso);
-  const parts = new Intl.DateTimeFormat("ja-JP", { timeZone: TIME_ZONE, hour: "numeric", hourCycle: "h23" }).formatToParts(d);
+  const parts = new Intl.DateTimeFormat("ja-JP", {
+    timeZone: TIME_ZONE,
+    hour: "numeric",
+    hourCycle: "h23",
+  }).formatToParts(d);
   const h = parts.find((p) => p.type === "hour")?.value ?? "0";
   return Number(h) % 24;
 }
@@ -52,7 +56,12 @@ export function periodKey(kind: "day" | "month", date = new Date()): string {
 /** 画面表示用：2026年10月10日 */
 export function formatDateJa(isoOrYmd: string): string {
   const d = isoOrYmd.length === 10 ? new Date(`${isoOrYmd}T00:00:00+09:00`) : new Date(isoOrYmd);
-  return new Intl.DateTimeFormat("ja-JP", { timeZone: TIME_ZONE, year: "numeric", month: "long", day: "numeric" }).format(d);
+  return new Intl.DateTimeFormat("ja-JP", {
+    timeZone: TIME_ZONE,
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(d);
 }
 
 export function formatDateTimeJa(iso: string): string {

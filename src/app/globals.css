@@ -6,9 +6,11 @@
  * 直接の色コードを画面に書かない。
  */
 :root {
-  /* メインカラー：空色（Q12 未定のため仮。ここを変えれば全体に反映される） */
-  --color-primary: #1c7ed6;
-  --color-primary-strong: #1864ab;
+  /* メインカラー：空色（Q12 未定のため仮。ここを変えれば全体に反映される）。
+   * 文字色・背景色の組み合わせは 13 章のコントラスト比 4.5 以上を満たす値にする
+   * （白 on primary 5.6、primary on 白 5.6、白 on primary-strong 7.1）。 */
+  --color-primary: #1769b8;
+  --color-primary-strong: #145a99;
   --color-primary-soft: #e7f1fb;
   --color-on-primary: #ffffff;
 
@@ -19,14 +21,15 @@
   --color-border-strong: #adb5bd;
 
   --color-text: #212529;
-  --color-text-muted: #6c757d;
+  /* text-muted は surface-muted / background / primary-soft / warning-soft の上でも 4.5 以上 */
+  --color-text-muted: #5f6670;
   --color-text-faint: #adb5bd;
 
   --color-danger: #c92a2a;
   --color-danger-soft: #fff0f0;
-  --color-warning: #b35c00;
+  --color-warning: #a35400;
   --color-warning-soft: #fff4e6;
-  --color-success: #2b8a3e;
+  --color-success: #237a35;
   --color-success-soft: #ebfbee;
 
   /* 人気度（F-1-5）：枠の色。文字ラベルを必ず添える */

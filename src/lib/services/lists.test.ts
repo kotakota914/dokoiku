@@ -38,6 +38,13 @@ vi.mock("@/lib/auth/server", () => ({
     }
     return { id: authState.userId, isAdmin: false };
   },
+  requireProfile: async () => {
+    if (!authState.userId) {
+      const { ApiError } = await import("@/lib/api/errors");
+      throw ApiError.unauthorized();
+    }
+    return { id: authState.userId, isAdmin: false };
+  },
 }));
 let repo = createMemoryRepository(true, { persist: false });
 vi.mock("@/lib/repo", () => ({ getRepo: async () => repo }));
@@ -87,6 +94,24 @@ describe("リストの作成・一覧・名前変更・削除（F-4-1）", () =>
 
     await deleteWishlist(repo, USER_A, list.id);
     await expectApiError(getOwnedWishlist(repo, USER_A, list.id), 404);
+  });
+
+  it("一覧は新しい順（作成したリストが先頭。memory と supabase で同じ並び。S-06 / F4-3）", async () => {
+    vi.useFakeTimers({ now: new Date("2026-10-10T01:00:00Z") });
+    try {
+      const first = await createWishlist(repo, USER_A, { name: "1つ目" });
+      vi.setSystemTime(new Date("2026-10-10T01:00:01Z"));
+      const second = await createWishlist(repo, USER_A, { name: "2つ目" });
+      vi.setSystemTime(new Date("2026-10-10T01:00:02Z"));
+      const third = await createWishlist(repo, USER_A, { name: "3つ目" });
+      expect((await listWishlists(repo, USER_A)).lists.map((l) => l.id)).toEqual([
+        third.id,
+        second.id,
+        first.id,
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("21 件目のリストは 409", async () => {

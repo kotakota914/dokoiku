@@ -103,7 +103,7 @@ export function DevLoginForm({ next }: DevLoginFormProps) {
               >
                 <Avatar src={null} name={u.displayName} size={32} />
                 <span className="flex-1 text-left">{u.displayName}</span>
-                {u.isAdmin ? <span className="text-sm text-text-muted">管理者</span> : null}
+                {u.isAdmin ? <span className="text-base text-text-muted">管理者</span> : null}
               </Button>
             </li>
           ))}

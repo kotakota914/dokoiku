@@ -11,6 +11,7 @@
 | 正式リリース | F-4 リスト共有、F-7 通報・管理 API、UI・性能改善                                                                                                                              |
 
 JPHACKS のデモ対象は「MVP ＋ 行きたい場所リスト ＋ 経路作成」（`docs/decisions.md` Q1）。
+`docs/implementation-report.md`：初回実装の報告（検証結果、実装範囲、未確認事項、引き継ぎ）
 
 ## デモの導線
 

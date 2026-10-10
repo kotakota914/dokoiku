@@ -7,10 +7,10 @@ import { json, parseQuery, route } from "@/lib/api/handler";
 import { getCurrentUser } from "@/lib/auth/server";
 import { getRepo } from "@/lib/repo";
 import { listSpotPosts } from "@/lib/services/spots";
-import { pagingQuerySchema } from "@/lib/validation/schemas";
+import { pagingQuerySchema, uuidSchema } from "@/lib/validation/schemas";
 
 export const GET = route<{ spotId: string }>(async (req, { params }) => {
-  const { spotId } = await params;
+  const spotId = uuidSchema.parse((await params).spotId);
   const { cursor, limit } = parseQuery(req, pagingQuerySchema);
   const viewer = await getCurrentUser();
   const repo = await getRepo();

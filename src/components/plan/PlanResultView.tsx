@@ -5,6 +5,7 @@
  * - 上部：日付、出発地 → 到着地、合計移動時間、終了時刻、概算バッジ（ADR-0018）
  * - 地図：RouteMap（経路線＋番号つきマーカー）
  * - タイムライン：並び替え・滞在時間変更 → POST /plans/recompute
+ *   （再計算の結果が終了時刻を超えたら circle-alert で警告し、収まるまで保存できない）
  * - 入らなかった場所、保存 / 削除
  */
 import { useRouter } from "next/navigation";
@@ -20,19 +21,26 @@ import {
   IconButton,
   PageHeader,
   SuspendedNotice,
+  cn,
   formatMinutes,
   useToast,
 } from "@/components/ui";
 import { ApiClientError, api, errorMessage } from "@/lib/api/client";
 import { loginUrl } from "@/lib/auth/next-path";
-import { TRAVEL_MODE_LABELS } from "@/lib/domain/constants";
+import { PLAN_DEFAULTS, TRAVEL_MODE_LABELS } from "@/lib/domain/constants";
 import type { Plan, PlanResult } from "@/lib/domain/types";
 import { buildRouteStops } from "@/lib/map/route";
-import { formatDateJa } from "@/lib/utils/time";
+import { isLunchSkipped } from "@/lib/planner";
+import { formatDateJa, hhmmToMinutes } from "@/lib/utils/time";
 import { Timeline, type TimelineSpot } from "./Timeline";
 import { SKIP_REASON_LABELS, type PlanResultViewProps } from "./types";
 
 const DELETED_SPOT_NAME = "削除されたスポット";
+
+/** 再計算で終了時刻（params.endTime）を超えたか（サーバーは items をそのまま返すので画面で判定する） */
+export function isOverEndTime(endAt: string, endTime: string): boolean {
+  return hhmmToMinutes(endAt) > hhmmToMinutes(endTime);
+}
 
 function currentPath(): string {
   if (typeof window === "undefined") return "/";
@@ -172,6 +180,9 @@ export function PlanResultView({
     }
   }
 
+  const overEndTime = isOverEndTime(result.endAt, params.endTime);
+  // 昼食休憩を希望したが 11:30〜13:30 に空きが無く入らなかった（F-5-1。planner と同じ判定）
+  const lunchSkipped = isLunchSkipped(params.lunchBreak, hhmmToMinutes(params.startTime), result.items);
   const originLabel = params.origin.label || "出発地";
   const destinationLabel = params.destination ? params.destination.label || "到着地" : "出発地に戻らない";
   const spotCount = result.items.filter((i) => i.type === "spot").length;
@@ -236,10 +247,36 @@ export function PlanResultView({
                 <Icon name="clock" size={16} />
                 終了
               </dt>
-              <dd className="text-text">{result.endAt}</dd>
+              <dd className={cn(overEndTime ? "font-semibold text-warning" : "text-text")}>{result.endAt}</dd>
             </div>
           </dl>
         </Card>
+
+        {overEndTime ? (
+          <Card tone="warning" role="alert" className="flex items-start gap-2">
+            <Icon name="circle-alert" size={20} className="mt-0.5 text-warning" />
+            <div className="flex flex-col gap-1">
+              <p className="text-base font-medium text-text">
+                終了時刻 {params.endTime} を超えています（終了 {result.endAt}）
+              </p>
+              <p className="text-base text-text-muted">
+                {editable
+                  ? "順番の入れ替えや滞在時間の短縮で終了時刻内に収めると保存できます。"
+                  : "保存時の条件より遅く終わる内容です。"}
+              </p>
+            </div>
+          </Card>
+        ) : null}
+
+        {lunchSkipped ? (
+          <Card tone="muted" role="status" className="flex items-start gap-2">
+            <Icon name="coffee" size={20} className="mt-0.5 text-text-muted" />
+            <p className="text-base text-text">
+              昼食休憩を入れられませんでした（{PLAN_DEFAULTS.lunchWindowStart}〜{PLAN_DEFAULTS.lunchWindowEnd}{" "}
+              の間に空きがありません）
+            </p>
+          </Card>
+        ) : null}
 
         {/* 地図（F-5-4） */}
         <div className="overflow-hidden rounded-card border border-border">
@@ -324,10 +361,10 @@ export function PlanResultView({
             {saveError ? <ErrorMessage message={saveError} /> : null}
             <Button
               size="lg"
-              leftIcon="bookmark"
+              leftIcon="save"
               fullWidth
               loading={saving}
-              disabled={recomputing || suspended}
+              disabled={recomputing || suspended || overEndTime}
               onClick={() => void save()}
             >
               保存

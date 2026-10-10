@@ -30,28 +30,29 @@ const trimmed = (min: number, max: number, label: string) =>
     .max(max, `${label}は${max}文字以内で入力してください`);
 
 // ---------- 地図・スポット ----------
-export const bboxSchema = z
-  .string()
-  .transform((s, ctx) => {
-    const parts = s.split(",").map((v) => Number(v.trim()));
-    if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) {
-      ctx.addIssue({ code: "custom", message: "bbox は minLng,minLat,maxLng,maxLat の形式で指定してください" });
-      return z.NEVER;
-    }
-    const [minLng, minLat, maxLng, maxLat] = parts;
-    if (minLng > maxLng || minLat > maxLat || minLat < -90 || maxLat > 90 || minLng < -180 || maxLng > 180) {
-      ctx.addIssue({ code: "custom", message: "bbox の範囲が正しくありません" });
-      return z.NEVER;
-    }
-    return { minLng, minLat, maxLng, maxLat };
-  });
+export const bboxSchema = z.string().transform((s, ctx) => {
+  const parts = s.split(",").map((v) => Number(v.trim()));
+  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) {
+    ctx.addIssue({ code: "custom", message: "bbox は minLng,minLat,maxLng,maxLat の形式で指定してください" });
+    return z.NEVER;
+  }
+  const [minLng, minLat, maxLng, maxLat] = parts;
+  if (minLng > maxLng || minLat > maxLat || minLat < -90 || maxLat > 90 || minLng < -180 || maxLng > 180) {
+    ctx.addIssue({ code: "custom", message: "bbox の範囲が正しくありません" });
+    return z.NEVER;
+  }
+  return { minLng, minLat, maxLng, maxLat };
+});
 
 export const categoryListSchema = z
   .string()
   .optional()
   .transform((s, ctx) => {
     if (!s) return undefined;
-    const list = s.split(",").map((v) => v.trim()).filter(Boolean);
+    const list = s
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean);
     const invalid = list.filter((v) => !(CATEGORIES as readonly string[]).includes(v));
     if (invalid.length) {
       ctx.addIssue({ code: "custom", message: `不明なカテゴリです: ${invalid.join(", ")}` });
@@ -70,7 +71,8 @@ export type SpotsInViewQuery = z.infer<typeof spotsInViewQuerySchema>;
 export const nearbyQuerySchema = z.object({
   lat: latSchema,
   lng: lngSchema,
-  accuracy: z.coerce.number().min(0).max(100_000).default(0),
+  /** GPS 誤差（メートル）。省略時は誤差不明として canCreate: false にする（Q7） */
+  accuracy: z.coerce.number().min(0).max(100_000).optional(),
   radius: z.coerce.number().min(1).max(LIMITS.nearbyRadiusMaxM).default(LIMITS.nearbyRadiusDefaultM),
 });
 export type NearbyQuery = z.infer<typeof nearbyQuerySchema>;
@@ -105,11 +107,8 @@ export const uploadRequestSchema = z.object({
       z.object({
         kind: z.enum(["full", "thumb"]),
         contentType: z.enum(["image/webp", "image/jpeg"]),
-        size: z
-          .number()
-          .int()
-          .positive()
-          .max(LIMITS.convertedImageMaxBytes, "変換後の画像は1枚あたり2MB以内にしてください"),
+        /** 上限（LIMITS.convertedImageMaxBytes）超過はスキーマではなく service で 413 PAYLOAD_TOO_LARGE にする（9.1） */
+        size: z.number().int().positive(),
       }),
     )
     .min(1)
@@ -162,10 +161,14 @@ export const createPostSchema = z
     message: "spotId か newSpot のどちらか一方を指定してください",
     path: ["spotId"],
   })
-  .refine((v) => !v.newSpot || v.newSpot.source !== "gps" || (v.newSpot.accuracyM ?? Infinity) < LIMITS.gpsAccuracyMaxM, {
-    message: "位置の誤差が大きいため、候補から選んでください",
-    path: ["newSpot", "accuracyM"],
-  });
+  .refine(
+    (v) =>
+      !v.newSpot || v.newSpot.source !== "gps" || (v.newSpot.accuracyM ?? Infinity) < LIMITS.gpsAccuracyMaxM,
+    {
+      message: "位置の誤差が大きいため、候補から選んでください",
+      path: ["newSpot", "accuracyM"],
+    },
+  );
 export type CreatePostInput = z.infer<typeof createPostSchema>;
 
 export const updatePostSchema = z.object({
@@ -178,15 +181,28 @@ export type UpdatePostInput = z.infer<typeof updatePostSchema>;
 
 export const createReportSchema = z.object({
   reason: z.enum(REPORT_REASONS),
-  note: z.string().trim().max(LIMITS.reportNoteMax, `${LIMITS.reportNoteMax}文字以内で入力してください`).optional(),
+  note: z
+    .string()
+    .trim()
+    .max(LIMITS.reportNoteMax, `${LIMITS.reportNoteMax}文字以内で入力してください`)
+    .optional(),
 });
 
 // ---------- プロフィール ----------
 export const displayNameSchema = trimmed(LIMITS.displayNameMin, LIMITS.displayNameMax, "表示名");
 
+export const AVATAR_URL_MESSAGE = "アイコンは https:// から始まる URL を入力してください";
+
+/** アイコン URL は https のみ（http: は混在コンテンツ、javascript:/data: は危険なため） */
+export const avatarUrlSchema = z
+  .string()
+  .url(AVATAR_URL_MESSAGE)
+  .max(500, AVATAR_URL_MESSAGE)
+  .refine((v) => v.startsWith("https://"), AVATAR_URL_MESSAGE);
+
 export const updateProfileSchema = z.object({
   displayName: displayNameSchema.optional(),
-  avatarUrl: z.string().url().max(500).nullable().optional(),
+  avatarUrl: avatarUrlSchema.nullable().optional(),
 });
 
 // ---------- リスト ----------
@@ -197,8 +213,22 @@ export const addListItemSchema = z.object({ spotId: uuidSchema });
 export const setMustVisitSchema = z.object({ mustVisit: z.boolean() });
 
 // ---------- 経路プラン ----------
-export const timeHHMMSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "時刻は HH:MM の形式で入力してください");
-export const dateYMDSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "日付は YYYY-MM-DD の形式で入力してください");
+export const timeHHMMSchema = z
+  .string()
+  .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "時刻は HH:MM の形式で入力してください");
+/** YYYY-MM-DD が実在する日付か（2026-02-30 のような繰り上がりも不可） */
+export function isValidYMD(ymd: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  if (!m) return false;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const date = new Date(Date.UTC(y, mo - 1, d));
+  return date.getUTCFullYear() === y && date.getUTCMonth() === mo - 1 && date.getUTCDate() === d;
+}
+
+export const dateYMDSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "日付は YYYY-MM-DD の形式で入力してください")
+  .refine(isValidYMD, "存在する日付を入力してください");
 
 export const planPlaceSchema = z.object({
   lat: latSchema,
@@ -209,7 +239,10 @@ export const planPlaceSchema = z.object({
 export const planComputeSchema = z
   .object({
     listId: uuidSchema,
-    spotIds: z.array(uuidSchema).min(1, "スポットを1つ以上選んでください").max(LIMITS.planSpotsMax, `スポットは${LIMITS.planSpotsMax}か所までです`),
+    spotIds: z
+      .array(uuidSchema)
+      .min(1, "スポットを1つ以上選んでください")
+      .max(LIMITS.planSpotsMax, `スポットは${LIMITS.planSpotsMax}か所までです`),
     origin: planPlaceSchema,
     destination: planPlaceSchema.nullable().default(null),
     date: dateYMDSchema,
@@ -220,7 +253,10 @@ export const planComputeSchema = z
     interests: z.array(z.enum(INTERESTS)).default([]),
     lunchBreak: z.boolean().default(false),
   })
-  .refine((v) => v.startTime < v.endTime, { message: "終了時刻は開始時刻より後にしてください", path: ["endTime"] });
+  .refine((v) => v.startTime < v.endTime, {
+    message: "終了時刻は開始時刻より後にしてください",
+    path: ["endTime"],
+  });
 export type PlanComputeInput = z.infer<typeof planComputeSchema>;
 
 /** 並び替え・滞在時間変更後の再計算。外部 API は呼ばない */
@@ -232,15 +268,52 @@ export const planRecomputeSchema = z.object({
 });
 export type PlanRecomputeInput = z.infer<typeof planRecomputeSchema>;
 
+/** 保存するプランの項目（PlanItem と同じ形。滞在時間は 5〜600 分） */
+const planStayMinSchema = z.number().int().min(5).max(600);
+const planTravelMinSchema = z
+  .number()
+  .int()
+  .min(0)
+  .max(24 * 60)
+  .nullable();
+export const planItemSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("spot"),
+    spotId: uuidSchema,
+    arrive: timeHHMMSchema,
+    stayMin: planStayMinSchema,
+    depart: timeHHMMSchema,
+    travelMinToNext: planTravelMinSchema,
+    inBestTime: z.boolean(),
+  }),
+  z.object({
+    type: z.literal("lunch"),
+    arrive: timeHHMMSchema,
+    stayMin: planStayMinSchema,
+    depart: timeHHMMSchema,
+    travelMinToNext: planTravelMinSchema,
+  }),
+]);
+export const skipReasonSchema = z.enum(["time_limit", "no_route", "deleted", "opening_hours"]);
+/** 経路線（GeoJSON LineString、[lng, lat]）。保存容量を抑えるため座標は最大 5000 点 */
+export const routeGeometrySchema = z.object({
+  type: z.literal("LineString"),
+  coordinates: z.array(z.tuple([lngSchema, latSchema])).max(5000, "経路線の座標が多すぎます"),
+});
+
 export const planSaveSchema = z.object({
   params: planComputeSchema,
   result: z.object({
-    items: z.array(z.any()),
-    skipped: z.array(z.object({ spotId: uuidSchema, reason: z.string() })),
-    totalTravelMin: z.number(),
+    /** スポット最大 LIMITS.planSpotsMax 件＋昼食 1 件。spotId が params.spotIds に含まれるかは service で確認する */
+    items: z.array(planItemSchema).max(LIMITS.planSpotsMax + 1, "プランの項目が多すぎます"),
+    skipped: z.array(z.object({ spotId: uuidSchema, reason: skipReasonSchema })).max(LIMITS.planSpotsMax),
+    totalTravelMin: z
+      .number()
+      .min(0)
+      .max(24 * 60),
     endAt: timeHHMMSchema,
-    geometry: z.any().nullable(),
-    travelMatrixId: z.string(),
+    geometry: routeGeometrySchema.nullable(),
+    travelMatrixId: z.string().min(1).max(200),
     estimated: z.boolean().default(false),
   }),
 });

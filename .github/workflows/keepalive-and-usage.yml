@@ -10,6 +10,10 @@
 #      - どちらかが 80%（USAGE_SUSPEND_RATIO）以上なら suspended_at を入れ、GET /api/v1/system/status が
 #        post_create を停止中として返す。80% 未満に戻れば suspended_at を外す（再開）。
 #      - 停止・再開が切り替わったときは NOTIFY_WEBHOOK_URL があれば Discord へ通知する（F-8-3）
+#   3. 日単位で停止していた外部 API（ors / nominatim）が日付の切替で自動再開（F-8-4）したことを通知する
+#      - 前日（JST）の period で suspended_at が入っている api_usage 行を探し、当日の行が停止中でなければ
+#        「期間が切り替わったため ◯◯ を再開しました」をログと Discord に出す（F-8-3 の再開側。アプリ側は何もしない）
+#   ※ 転送量（Egress 5GB/月）は SQL から取れないため監視対象外。docs/setup.md 5 章の手動確認で代替する
 #
 # 必要な secrets
 #   SUPABASE_DB_URL     backup-db.yml と同じ接続文字列
@@ -116,6 +120,46 @@ jobs:
           done < usage.txt
           [ -n "$MSG" ] || { echo "停止状態の変化なし"; exit 0; }
           printf '%b' "$MSG"
+          [ -n "$NOTIFY_WEBHOOK_URL" ] || { echo "NOTIFY_WEBHOOK_URL 未設定のため Discord 通知は省略"; exit 0; }
+          curl -fsS -H 'Content-Type: application/json' -d "$(jq -cn --arg c "$(printf '%b' "$MSG")" '{content:$c}')" "$NOTIFY_WEBHOOK_URL" || true
+
+      - name: Notify auto-resume of external APIs after period change (Discord)
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          # 戻り値：provider|feature|period|count|limit（前日の period で停止中だった日単位の行）
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -tA -F '|' > resumed.txt <<'SQL'
+          with periods as (
+            select to_char((now() at time zone 'Asia/Tokyo') - interval '1 day', 'YYYY-MM-DD') as prev_day,
+                   to_char(now() at time zone 'Asia/Tokyo', 'YYYY-MM-DD') as today
+          )
+          select u.provider, u.feature, u.period, u.count, u."limit"
+          from public.api_usage u, periods p
+          where u.period = p.prev_day
+            and u.suspended_at is not null
+            and not exists (
+              select 1 from public.api_usage t
+              where t.provider = u.provider and t.feature = u.feature and t.period = p.today
+                and t.suspended_at is not null
+            )
+          order by u.provider, u.feature;
+          SQL
+          MSG=""
+          while IFS='|' read -r provider feature period count limit; do
+            [ -n "$provider" ] || continue
+            case "$feature" in
+              external_search) label="外部の場所検索" ;;
+              route_planning) label="経路作成" ;;
+              post_create) label="スポット投稿（写真アップロード）" ;;
+              *) label="$feature" ;;
+            esac
+            line="期間が切り替わったため ${label} を再開しました（${provider}/${feature}、${period} は ${count} / ${limit} 回で停止）"
+            echo "$line"
+            MSG="${MSG}[dokoiko] ${line}\n"
+          done < resumed.txt
+          [ -n "$MSG" ] || { echo "期間切替による再開なし"; exit 0; }
           [ -n "$NOTIFY_WEBHOOK_URL" ] || { echo "NOTIFY_WEBHOOK_URL 未設定のため Discord 通知は省略"; exit 0; }
           curl -fsS -H 'Content-Type: application/json' -d "$(jq -cn --arg c "$(printf '%b' "$MSG")" '{content:$c}')" "$NOTIFY_WEBHOOK_URL" || true
 

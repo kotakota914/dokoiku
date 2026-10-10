@@ -154,7 +154,6 @@ export function ListItemRow({
               onClick={() => void toggleMustVisit()}
               loading={toggling}
               className={cn(mustVisit && "text-warning")}
-              iconSize={24}
             />
           ) : null}
           <IconButton

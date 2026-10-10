@@ -5,7 +5,23 @@
 export type { PlannerSpot, PlannerInput, PlannerOutput, TravelMatrix, TravelLeg } from "./types";
 export { computeStayMinutes } from "./stay";
 export { bestHoursOf, isInBestTime, BEST_HOUR_RATIO } from "./bestHours";
-export { buildSchedule, isOpenAt, legMinutes, travelMinutes, type ScheduleOptions, type ScheduleResult } from "./schedule";
-export { candidateOrders, permutations, nearestNeighborOrder, twoOpt, pathCostSec, type SearchContext } from "./search";
+export {
+  buildSchedule,
+  isLunchSkipped,
+  isOpenAt,
+  legMinutes,
+  travelMinutes,
+  type ScheduleOptions,
+  type ScheduleResult,
+} from "./schedule";
+export {
+  candidateOrders,
+  heuristicOrders,
+  permutations,
+  nearestNeighborOrder,
+  twoOpt,
+  pathCostSec,
+  type SearchContext,
+} from "./search";
 export { score } from "./score";
 export { planRoute, removeUnreachable, removeClosed } from "./plan";

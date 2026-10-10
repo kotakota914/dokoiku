@@ -10,6 +10,7 @@ const { LIMITS } = await import("@/lib/domain/constants");
 const { createMemoryRepository, SEED_USER_IDS } = await import("@/lib/repo/memory");
 const { newId } = await import("@/lib/utils/id");
 const { listOpenReports, reportPost } = await import("./reports");
+const { adminSetPostStatus } = await import("./posts");
 
 type Repo = ReturnType<typeof createMemoryRepository>;
 
@@ -65,6 +66,26 @@ describe("reportPost", () => {
     expect(mine.every((r) => r.post?.id === post.id && r.post.status === "hidden")).toBe(true);
     expect(mine.find((r) => r.reporterId === reporters[1])?.note).toBe("場所が違います");
     expect(mine.find((r) => r.reporterId === reporters[2])?.note).toBeNull();
+  });
+
+  it("管理者が再表示したあとは、未処理の通報が新たに 3 件集まるまで非表示にしない（F-7-2 / F3-02）", async () => {
+    const repo = makeRepo();
+    const post = await firstPostOf(repo, SEED_USER_IDS.userA);
+    const third = await repo.profiles.create({ id: newId(), displayName: "通報者C" });
+    const fourth = await repo.profiles.create({ id: newId(), displayName: "通報者D" });
+    for (const reporter of [SEED_USER_IDS.userB, SEED_USER_IDS.admin, third.id]) {
+      await reportPost(repo, reporter, post.id, { reason: "spam" });
+    }
+    expect(await repo.posts.getById(post.id, null)).toBeNull();
+
+    // 管理者が確認して再表示 → 3 件は解決済みになる
+    await adminSetPostStatus(repo, SEED_USER_IDS.admin, post.id, "public");
+    expect((await listOpenReports(repo, { limit: 50 })).items.some((r) => r.postId === post.id)).toBe(false);
+
+    // 解決済みは数えないので、新しい 1 件では非表示にならない（count は未処理の件数）
+    const r = await reportPost(repo, fourth.id, post.id, { reason: "other" });
+    expect(r).toEqual({ count: 1, hidden: false });
+    expect((await repo.posts.getById(post.id, null))!.status).toBe("public");
   });
 
   it("自分の投稿は 403", async () => {

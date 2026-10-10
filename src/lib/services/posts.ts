@@ -5,7 +5,7 @@
  * - 投稿・いいね・表示切り替えのあとは必ず repo.spots.recomputeStats(spotId) を呼ぶ（F-2-13）。
  */
 import { ApiError } from "@/lib/api/errors";
-import { checkRateLimit } from "@/lib/api/ratelimit";
+import { checkRateLimit, peekRateLimit } from "@/lib/api/ratelimit";
 import { serverConfig } from "@/lib/config";
 import { LIMITS } from "@/lib/domain/constants";
 import type { PostImage, PostStatus, PostView, SpotSummary } from "@/lib/domain/types";
@@ -75,9 +75,21 @@ export async function defaultReverseGeocode(
   }
 }
 
+function postRateLimitKey(userId: string): string {
+  return `posts:${userId}`;
+}
+
+/**
+ * レート制限（9.1：投稿は 1 分に 5 件まで）は「作成された投稿」だけを数える。
+ * プロセス内カウンタは入口では peek だけ行い、投稿の作成に成功したあとで加算する（409・400・404 の試行は数えない）。
+ */
 async function assertPostCreateAvailable(repo: Repository, userId: string, now: Date): Promise<void> {
-  const key = `posts:${userId}`;
-  const allowedInProcess = checkRateLimit(key, LIMITS.postsPerMinute, 60_000, now.getTime());
+  const allowedInProcess = peekRateLimit(
+    postRateLimitKey(userId),
+    LIMITS.postsPerMinute,
+    60_000,
+    now.getTime(),
+  );
   const recent = await repo.posts.countRecentByUser(userId, 60_000);
   if (!allowedInProcess || recent >= LIMITS.postsPerMinute) {
     throw ApiError.rateLimited(
@@ -157,6 +169,8 @@ async function finalizeImages(
       images.map((i) => ({ fullPath: i.fullPath, thumbPath: i.thumbPath })),
     );
   } catch (err) {
+    // Storage 側のサイズ・形式の確認（413 PAYLOAD_TOO_LARGE）はそのまま返す（api-02）
+    if (err instanceof ApiError) throw err;
     console.warn("[posts] 画像の確定に失敗しました", err instanceof Error ? err.message : err);
     throw ApiError.validation(
       "アップロードした写真が見つかりません。写真をもう一度アップロードしてください",
@@ -219,6 +233,7 @@ export async function createPost(
     stayDuration: input.stayDuration,
     images: toPostImages(input.images, input.images),
   });
+  checkRateLimit(postRateLimitKey(userId), LIMITS.postsPerMinute, 60_000, now.getTime());
 
   let finalPaths: { fullPath: string; thumbPath: string }[];
   try {
@@ -237,7 +252,7 @@ export async function createPost(
 // ---------- 編集 ----------
 
 /**
- * PATCH /posts/{postId}（F-2-12。本人のみ）。
+ * PATCH /posts/{postId}（F-2-12。本人のみ）。通報などで非表示になった投稿は本人でも編集できない（403。10.3）。
  * images を指定したときは、本人の一時パス（新しい写真）とこの投稿の確定済みパス（残す写真）だけを受け付け、
  * 一時パスは確定してから画像一式を置き換え、使わなくなった古い画像を Storage から削除する。
  */
@@ -250,6 +265,7 @@ export async function updatePost(
   const current = await repo.posts.getById(postId, userId);
   if (!current) throw ApiError.notFound("この投稿は見つかりませんでした");
   if (current.userId !== userId) throw ApiError.forbidden("自分の投稿だけ編集できます");
+  if (current.status === "hidden") throw ApiError.forbidden("非表示の投稿は編集できません");
 
   const patch: Parameters<Repository["posts"]["update"]>[1] = {};
   if (input.comment !== undefined) patch.comment = input.comment;
@@ -331,7 +347,11 @@ export async function unlikePost(
 
 // ---------- 管理（F-7-3） ----------
 
-/** PATCH /admin/posts/{postId}：非表示・再表示。再表示するときは未処理の通報を解決済みにする */
+/**
+ * PATCH /admin/posts/{postId}：非表示・再表示（F-7-3）。
+ * 管理者が確認して状態を決めた時点で、その投稿の未処理の通報は非表示・再表示のどちらでも解決済みにする
+ * （非表示のままでも通報一覧に残り続けないようにする）。
+ */
 export async function adminSetPostStatus(
   repo: Repository,
   adminId: string,
@@ -341,7 +361,7 @@ export async function adminSetPostStatus(
   const post = await repo.posts.getById(postId, adminId);
   if (!post) throw ApiError.notFound("この投稿は見つかりませんでした");
   await repo.posts.setStatus(postId, status);
-  if (status === "public") await repo.reports.resolveByPost(postId);
+  await repo.reports.resolveByPost(postId);
   await repo.spots.recomputeStats(post.spotId);
   const updated = await repo.posts.getById(postId, adminId);
   if (!updated) throw ApiError.notFound("この投稿は見つかりませんでした");

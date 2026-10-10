@@ -113,6 +113,28 @@ describe("PATCH /me", () => {
     expect(badUrl.status).toBe(400);
   });
 
+  it("avatarUrl は https:// のみ（http: / javascript: / data: は 400、details.reason は invalid）", async () => {
+    resetRepo();
+    cookieState.userId = SEED_USER_IDS.userA;
+    for (const avatarUrl of [
+      "http://example.com/a.png",
+      "javascript:alert(1)",
+      "data:image/png;base64,AAAA",
+    ]) {
+      const res = await patchMe(req("PATCH", "", { avatarUrl }), ctx);
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error.code).toBe("VALIDATION_ERROR");
+      expect(body.error.message).toBe("アイコンは https:// から始まる URL を入力してください");
+      expect(body.error.details[0]).toMatchObject({ field: "avatarUrl", reason: "invalid" });
+    }
+    const tooLong = await patchMe(req("PATCH", "", { displayName: "あ".repeat(21) }), ctx);
+    expect((await tooLong.json()).error.details[0]).toMatchObject({
+      field: "displayName",
+      reason: "max_length",
+    });
+  });
+
   it("JSON でないボディは 400", async () => {
     resetRepo();
     cookieState.userId = SEED_USER_IDS.userA;

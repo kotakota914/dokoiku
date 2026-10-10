@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useId, useRef, type ReactNode } from "react";
 import { Button } from "./Button";
 import { IconButton } from "./IconButton";
-import { useEscapeKey, useLockBodyScroll } from "./useLockBodyScroll";
+import { useEscapeKey, useFocusTrap, useLockBodyScroll } from "./useLockBodyScroll";
 import { cn } from "./cn";
 
 export interface DialogProps {
@@ -17,16 +17,14 @@ export interface DialogProps {
   className?: string;
 }
 
-/** 中央のモーダル。Escape・背景クリックで閉じる */
+/** 中央のモーダル。Escape・背景クリックで閉じる。フォーカスはダイアログ内に留め、閉じたら元の要素へ戻す */
 export function Dialog({ open, onClose, title, description, children, footer, className }: DialogProps) {
   const titleId = useId();
   const descId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   useLockBodyScroll(open);
   useEscapeKey(open, onClose);
-  useEffect(() => {
-    if (open) panelRef.current?.focus();
-  }, [open]);
+  useFocusTrap(open, panelRef);
 
   if (!open) return null;
   return (

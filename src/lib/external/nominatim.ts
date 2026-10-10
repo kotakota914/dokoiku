@@ -83,7 +83,10 @@ export function resetNominatimThrottleForTests(): void {
 // ---------- 住所の解析 ----------
 
 /** 政令指定都市など「市＋区」を持つときは区まで含めて city にする */
-export function parseJpAddress(address: NominatimAddress | undefined | null): { prefecture: string | null; city: string | null } {
+export function parseJpAddress(address: NominatimAddress | undefined | null): {
+  prefecture: string | null;
+  city: string | null;
+} {
   if (!address) return { prefecture: null, city: null };
   const prefecture = address.state ?? address.province ?? null;
   const base = address.city ?? address.town ?? address.village ?? address.municipality ?? null;
@@ -103,7 +106,10 @@ export function toPlaceCandidate(p: NominatimPlace): PlaceCandidate | null {
   const displayName = p.display_name ?? "";
   const name = (p.name && p.name.trim()) || displayName.split(",")[0]?.trim() || "";
   if (!name) return null;
-  const id = p.osm_type && p.osm_id !== undefined ? `${p.osm_type}:${p.osm_id}` : `place:${p.place_id ?? `${lat},${lng}`}`;
+  const id =
+    p.osm_type && p.osm_id !== undefined
+      ? `${p.osm_type}:${p.osm_id}`
+      : `place:${p.place_id ?? `${lat},${lng}`}`;
   return { source: "external", id, name, lat, lng, address: displayName || null, prefecture, city };
 }
 
@@ -119,7 +125,11 @@ async function getJson<T>(path: string, params: Record<string, string>, opts: No
   try {
     res = await fetchImpl(url.toString(), {
       method: "GET",
-      headers: { "User-Agent": serverConfig.nominatimUserAgent, Accept: "application/json", "Accept-Language": "ja" },
+      headers: {
+        "User-Agent": serverConfig.nominatimUserAgent,
+        Accept: "application/json",
+        "Accept-Language": "ja",
+      },
       signal: controller.signal,
     });
   } catch (err) {
@@ -165,7 +175,11 @@ export async function searchPlaces(q: string, opts: NominatimOptions = {}): Prom
 }
 
 /** 逆ジオコーディング。該当なしは null */
-export async function reverseGeocode(lat: number, lng: number, opts: NominatimOptions = {}): Promise<PlaceCandidate | null> {
+export async function reverseGeocode(
+  lat: number,
+  lng: number,
+  opts: NominatimOptions = {},
+): Promise<PlaceCandidate | null> {
   const data = await throttled(() =>
     getJson<NominatimPlace>(
       "/reverse",

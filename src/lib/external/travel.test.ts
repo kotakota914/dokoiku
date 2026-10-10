@@ -7,7 +7,8 @@ import { getRouteGeometry, getTravelMatrix, travelMatrixIdOf, type TravelPoint }
 /** TravelCacheRepo だけを満たす偽物 */
 function fakeTravelCache(initial: Omit<TravelTimeEntry, "fetchedAt">[] = []) {
   const store = new Map<string, TravelTimeEntry>();
-  for (const e of initial) store.set(`${e.mode}:${e.fromKey}|${e.toKey}`, { ...e, fetchedAt: "2026-10-10T00:00:00.000+09:00" });
+  for (const e of initial)
+    store.set(`${e.mode}:${e.fromKey}|${e.toKey}`, { ...e, fetchedAt: "2026-10-10T00:00:00.000+09:00" });
   const repo: TravelCacheRepo & { store: Map<string, TravelTimeEntry>; getManyCalls: number } = {
     store,
     getManyCalls: 0,
@@ -21,7 +22,8 @@ function fakeTravelCache(initial: Omit<TravelTimeEntry, "fetchedAt">[] = []) {
       return out;
     },
     putMany: async (entries) => {
-      for (const e of entries) store.set(`${e.mode}:${e.fromKey}|${e.toKey}`, { ...e, fetchedAt: "2026-10-10T00:00:00.000+09:00" });
+      for (const e of entries)
+        store.set(`${e.mode}:${e.fromKey}|${e.toKey}`, { ...e, fetchedAt: "2026-10-10T00:00:00.000+09:00" });
     },
     purgeExpired: async () => 0,
   };
@@ -36,13 +38,27 @@ function fakeUsage() {
     rows,
     get: async (p, f, period) => rows.get(k(p, f, period)) ?? null,
     increment: async (p, f, period, limit, by = 1) => {
-      const row = rows.get(k(p, f, period)) ?? { provider: p, feature: f, period, count: 0, limit, suspendedAt: null };
+      const row = rows.get(k(p, f, period)) ?? {
+        provider: p,
+        feature: f,
+        period,
+        count: 0,
+        limit,
+        suspendedAt: null,
+      };
       row.count += by;
       rows.set(k(p, f, period), row);
       return { ...row };
     },
     set: async (p, f, period, count, limit) => {
-      const row = { provider: p, feature: f, period, count, limit, suspendedAt: rows.get(k(p, f, period))?.suspendedAt ?? null };
+      const row = {
+        provider: p,
+        feature: f,
+        period,
+        count,
+        limit,
+        suspendedAt: rows.get(k(p, f, period))?.suspendedAt ?? null,
+      };
       rows.set(k(p, f, period), row);
       return { ...row };
     },
@@ -61,7 +77,9 @@ const B: TravelPoint = { key: spotKey("b"), lat: 35.0037, lng: 135.7788 };
 
 function fullCacheEntries(points: TravelPoint[], mode: "walking" | "driving") {
   const out: Omit<TravelTimeEntry, "fetchedAt">[] = [];
-  for (const a of points) for (const b of points) if (a.key !== b.key) out.push({ fromKey: a.key, toKey: b.key, mode, durationSec: 600, distanceM: 800 });
+  for (const a of points)
+    for (const b of points)
+      if (a.key !== b.key) out.push({ fromKey: a.key, toKey: b.key, mode, durationSec: 600, distanceM: 800 });
   return out;
 }
 
@@ -80,7 +98,10 @@ describe("getTravelMatrix", () => {
     const cache = fakeTravelCache(fullCacheEntries([ORIGIN, A, B], "walking"));
     const usage = fakeUsage();
     const fetchMatrix = vi.fn();
-    const r = await getTravelMatrix({ travelCache: cache, apiUsage: usage }, [ORIGIN, A, B], "walking", { fetchMatrix, routingEnabled: true });
+    const r = await getTravelMatrix({ travelCache: cache, apiUsage: usage }, [ORIGIN, A, B], "walking", {
+      fetchMatrix,
+      routingEnabled: true,
+    });
     expect(fetchMatrix).not.toHaveBeenCalled();
     expect(usage.rows.size).toBe(0);
     expect(r.estimated).toBe(false);
@@ -94,11 +115,18 @@ describe("getTravelMatrix", () => {
     const usage = fakeUsage();
     const fetchMatrix = vi.fn(async (points: readonly { lat: number; lng: number }[]) => {
       const n = points.length;
-      const durations = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 0 : 100 * (i + 1) + j)));
-      const distances = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 0 : 1000 * (i + 1) + j)));
+      const durations = Array.from({ length: n }, (_, i) =>
+        Array.from({ length: n }, (_, j) => (i === j ? 0 : 100 * (i + 1) + j)),
+      );
+      const distances = Array.from({ length: n }, (_, i) =>
+        Array.from({ length: n }, (_, j) => (i === j ? 0 : 1000 * (i + 1) + j)),
+      );
       return { durations, distances };
     });
-    const r = await getTravelMatrix({ travelCache: cache, apiUsage: usage }, [ORIGIN, A, B], "walking", { fetchMatrix, routingEnabled: true });
+    const r = await getTravelMatrix({ travelCache: cache, apiUsage: usage }, [ORIGIN, A, B], "walking", {
+      fetchMatrix,
+      routingEnabled: true,
+    });
     expect(fetchMatrix).toHaveBeenCalledTimes(1);
     expect(r.estimated).toBe(false);
     expect(r.matrix.size).toBe(6);
@@ -108,7 +136,10 @@ describe("getTravelMatrix", () => {
     expect(row).toMatchObject({ provider: "ors", feature: "route_planning", count: 1 });
 
     // 2 回目は全ヒットなので呼ばない（F-5-6 の再計算）
-    const r2 = await getTravelMatrix({ travelCache: cache, apiUsage: usage }, [ORIGIN, A, B], "walking", { fetchMatrix, routingEnabled: true });
+    const r2 = await getTravelMatrix({ travelCache: cache, apiUsage: usage }, [ORIGIN, A, B], "walking", {
+      fetchMatrix,
+      routingEnabled: true,
+    });
     expect(fetchMatrix).toHaveBeenCalledTimes(1);
     expect(r2.travelMatrixId).toBe(r.travelMatrixId);
   });
@@ -128,7 +159,10 @@ describe("getTravelMatrix", () => {
         [null, null, 0],
       ],
     }));
-    const r = await getTravelMatrix({ travelCache: cache, apiUsage: usage }, [ORIGIN, A, B], "walking", { fetchMatrix, routingEnabled: true });
+    const r = await getTravelMatrix({ travelCache: cache, apiUsage: usage }, [ORIGIN, A, B], "walking", {
+      fetchMatrix,
+      routingEnabled: true,
+    });
     expect(r.matrix.size).toBe(2);
     expect(r.matrix.has(`${ORIGIN.key}|${B.key}`)).toBe(false);
     expect(cache.store.size).toBe(2);
@@ -138,7 +172,10 @@ describe("getTravelMatrix", () => {
     const cache = fakeTravelCache();
     const usage = fakeUsage();
     const fetchMatrix = vi.fn();
-    const r = await getTravelMatrix({ travelCache: cache, apiUsage: usage }, [ORIGIN, A, B], "walking", { fetchMatrix, routingEnabled: false });
+    const r = await getTravelMatrix({ travelCache: cache, apiUsage: usage }, [ORIGIN, A, B], "walking", {
+      fetchMatrix,
+      routingEnabled: false,
+    });
     expect(fetchMatrix).not.toHaveBeenCalled();
     expect(r.estimated).toBe(true);
     expect(r.matrix.size).toBe(6);
@@ -160,7 +197,11 @@ describe("getTravelMatrix", () => {
     await usage.setSuspended("ors", "route_planning", "2026-10-10", "2026-10-10T10:00:00.000+09:00");
     const fetchMatrix = vi.fn();
     await expect(
-      getTravelMatrix({ travelCache: cache, apiUsage: usage }, [ORIGIN, A], "walking", { fetchMatrix, routingEnabled: true, now }),
+      getTravelMatrix({ travelCache: cache, apiUsage: usage }, [ORIGIN, A], "walking", {
+        fetchMatrix,
+        routingEnabled: true,
+        now,
+      }),
     ).rejects.toMatchObject({ code: "FEATURE_SUSPENDED" });
     expect(fetchMatrix).not.toHaveBeenCalled();
   });
@@ -168,7 +209,12 @@ describe("getTravelMatrix", () => {
   it("同じ座標の出発地・到着地は 1 地点にまとめる", async () => {
     const cache = fakeTravelCache(fullCacheEntries([ORIGIN, A], "driving"));
     const usage = fakeUsage();
-    const r = await getTravelMatrix({ travelCache: cache, apiUsage: usage }, [ORIGIN, A, { ...ORIGIN }], "driving", { routingEnabled: true });
+    const r = await getTravelMatrix(
+      { travelCache: cache, apiUsage: usage },
+      [ORIGIN, A, { ...ORIGIN }],
+      "driving",
+      { routingEnabled: true },
+    );
     expect(r.matrix.size).toBe(2);
   });
 });
@@ -176,8 +222,20 @@ describe("getTravelMatrix", () => {
 describe("getRouteGeometry", () => {
   it("ORS があれば 1 回呼んで LineString を返す", async () => {
     const usage = fakeUsage();
-    const fetchDirections = vi.fn(async () => [[135.7588, 34.9858], [135.77, 34.99], [135.785, 34.9948]] as [number, number][]);
-    const r = await getRouteGeometry({ travelCache: fakeTravelCache(), apiUsage: usage }, [ORIGIN, A], "walking", { fetchDirections, routingEnabled: true });
+    const fetchDirections = vi.fn(
+      async () =>
+        [
+          [135.7588, 34.9858],
+          [135.77, 34.99],
+          [135.785, 34.9948],
+        ] as [number, number][],
+    );
+    const r = await getRouteGeometry(
+      { travelCache: fakeTravelCache(), apiUsage: usage },
+      [ORIGIN, A],
+      "walking",
+      { fetchDirections, routingEnabled: true },
+    );
     expect(fetchDirections).toHaveBeenCalledTimes(1);
     expect(r.estimated).toBe(false);
     expect(r.geometry.coordinates).toHaveLength(3);
@@ -185,16 +243,33 @@ describe("getRouteGeometry", () => {
   });
 
   it("ORS が無ければ直線（estimated=true）", async () => {
-    const r = await getRouteGeometry({ travelCache: fakeTravelCache(), apiUsage: fakeUsage() }, [ORIGIN, A, B], "walking", { routingEnabled: false });
+    const r = await getRouteGeometry(
+      { travelCache: fakeTravelCache(), apiUsage: fakeUsage() },
+      [ORIGIN, A, B],
+      "walking",
+      { routingEnabled: false },
+    );
     expect(r.estimated).toBe(true);
-    expect(r.geometry).toEqual({ type: "LineString", coordinates: [[ORIGIN.lng, ORIGIN.lat], [A.lng, A.lat], [B.lng, B.lat]] });
+    expect(r.geometry).toEqual({
+      type: "LineString",
+      coordinates: [
+        [ORIGIN.lng, ORIGIN.lat],
+        [A.lng, A.lat],
+        [B.lng, B.lat],
+      ],
+    });
   });
 
   it("上流エラーなら直線で代替する", async () => {
     const fetchDirections = vi.fn(async () => {
       throw new Error("boom");
     });
-    const r = await getRouteGeometry({ travelCache: fakeTravelCache(), apiUsage: fakeUsage() }, [ORIGIN, A], "walking", { fetchDirections, routingEnabled: true });
+    const r = await getRouteGeometry(
+      { travelCache: fakeTravelCache(), apiUsage: fakeUsage() },
+      [ORIGIN, A],
+      "walking",
+      { fetchDirections, routingEnabled: true },
+    );
     expect(r.estimated).toBe(true);
     expect(r.geometry.coordinates).toHaveLength(2);
   });

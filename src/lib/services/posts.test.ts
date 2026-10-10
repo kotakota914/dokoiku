@@ -353,6 +353,30 @@ describe("createPost", () => {
     );
     expect(post.userId).toBe(SEED_USER_IDS.userA);
   });
+
+  it("レート制限：投稿が作られなかった試行（409）は数えず、そのあとの正常な投稿は通る", async () => {
+    const repo = await makeRepo();
+    const me = SEED_USER_IDS.admin;
+    const spot = await anySpot(repo);
+    const image = await uploadedImage(repo, me);
+    const duplicate = {
+      newSpot: { name: spot.name, lat: spot.lat, lng: spot.lng, source: "gps" as const, accuracyM: 10 },
+      images: [image],
+      comment: "",
+      category: spot.category,
+      stayDuration: null,
+    };
+    for (let i = 0; i < LIMITS.postsPerMinute + 1; i++) {
+      await expectApiError(createPost(repo, me, duplicate, noGeocode), 409);
+    }
+    const { post } = await createPost(
+      repo,
+      me,
+      { spotId: spot.id, images: [image], comment: "", category: "other", stayDuration: null },
+      noGeocode,
+    );
+    expect(post.userId).toBe(me);
+  });
 });
 
 describe("defaultReverseGeocode", () => {
@@ -433,6 +457,16 @@ describe("updatePost", () => {
     const post = await firstPostOf(repo, SEED_USER_IDS.userA);
     await expectApiError(updatePost(repo, SEED_USER_IDS.userB, post.id, { comment: "x" }), 403);
     await expectApiError(updatePost(repo, SEED_USER_IDS.userB, newId(), { comment: "x" }), 404);
+  });
+
+  it("非表示になった投稿は本人でも編集できない（403）", async () => {
+    const repo = await makeRepo();
+    const me = SEED_USER_IDS.userA;
+    const post = await firstPostOf(repo, me);
+    await repo.posts.setStatus(post.id, "hidden");
+    const err = await expectApiError(updatePost(repo, me, post.id, { comment: "x" }), 403);
+    expect(err.code).toBe("FORBIDDEN");
+    expect((await repo.posts.getById(post.id, me))!.comment).toBe(post.comment);
   });
 
   it("images：自分の新しい tmp パスを確定して置き換え、確定済みパスは残す。他人のパスは 400", async () => {
@@ -564,7 +598,7 @@ describe("likePost / unlikePost", () => {
 });
 
 describe("adminSetPostStatus", () => {
-  it("非表示でスポットの投稿数が減り、再表示で戻って通報が解決済みになる", async () => {
+  it("非表示でスポットの投稿数が減って通報が解決済みになり、再表示で投稿数が戻る", async () => {
     const repo = await makeRepo();
     const admin = SEED_USER_IDS.admin;
     const post = await firstPostOf(repo, SEED_USER_IDS.userA);
@@ -580,8 +614,15 @@ describe("adminSetPostStatus", () => {
     expect(hidden.status).toBe("hidden");
     expect((await repo.spots.getById(post.spotId))!.postCount).toBe(before - 1);
     expect(await repo.posts.getById(post.id, null)).toBeNull();
-    expect((await repo.reports.listOpen({ limit: 50 })).items.some((r) => r.postId === post.id)).toBe(true);
+    // 管理者が確認して非表示にした時点で、通報は未処理一覧から消える（F-7-3）
+    expect((await repo.reports.listOpen({ limit: 50 })).items.some((r) => r.postId === post.id)).toBe(false);
 
+    await repo.reports.create({
+      postId: post.id,
+      reporterId: SEED_USER_IDS.admin,
+      reason: "other",
+      note: null,
+    });
     const shown = await adminSetPostStatus(repo, admin, post.id, "public");
     expect(shown.status).toBe("public");
     expect((await repo.spots.getById(post.spotId))!.postCount).toBe(before);

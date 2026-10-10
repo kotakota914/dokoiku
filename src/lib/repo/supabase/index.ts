@@ -52,6 +52,7 @@ import type {
 } from "@/lib/repo/types";
 import { serverConfig } from "@/lib/config";
 import { decodeCursor, encodeCursor } from "@/lib/api/cursor";
+import { ApiError } from "@/lib/api/errors";
 import { newId } from "@/lib/utils/id";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
@@ -119,6 +120,9 @@ function isUniqueViolation(error: { code?: string } | null): boolean {
 
 const POSTS = "posts";
 
+/** Storage に保存を許す変換後の形式（バケットの allowed_mime_types と同じ。ADR-0019） */
+const STORED_IMAGE_TYPES = ["image/webp", "image/jpeg"] as const;
+
 /** 投稿一覧で埋め込む列 */
 const POST_SELECT = "*, post_images(*), profiles(id, display_name, avatar_url), spots(name)";
 
@@ -129,9 +133,16 @@ function keysetOlderThan(createdAt: string, id: string): string {
   return `created_at.lt.${c},and(created_at.eq.${c},id.lt.${i})`;
 }
 
+/** Next.js が cookies() をリクエスト外で呼んだときに投げる例外か（cron など） */
+function isOutsideRequestScopeError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /outside a request scope|next-dynamic-api-wrong-context/.test(message);
+}
+
 /**
  * クライアントの遅延生成。
- * user: Cookie セッション（RLS 適用）。cookies() が使えなければ admin で代替する。
+ * user: Cookie セッション（RLS 適用）。cookies() が使えない文脈（cron など）だけ admin で代替する。
+ * それ以外の失敗（anon key 未設定など）は RLS を迂回しないよう、そのまま例外にする（api-09）。
  */
 class Clients {
   private userPromise: Promise<{ client: Client; viaAdmin: boolean }> | null = null;
@@ -149,9 +160,10 @@ class Clients {
           const { createSupabaseServerClient } = await import("@/lib/supabase/server");
           const client = await createSupabaseServerClient();
           return { client: client as unknown as Client, viaAdmin: false };
-        } catch {
+        } catch (err) {
           // Route Handler / Server Component の外（cron など）では cookies() が使えない
-          return { client: this.admin(), viaAdmin: true };
+          if (isOutsideRequestScopeError(err)) return { client: this.admin(), viaAdmin: true };
+          throw err;
         }
       })();
     }
@@ -724,7 +736,9 @@ class SupabaseWishlistsRepo implements WishlistsRepo {
         .from("wishlists")
         .select("*, wishlist_items(count)")
         .eq("user_id", userId)
-        .order("created_at", { ascending: true }),
+        // memory 実装と同じ新しい順（created_at desc, id desc）。画面は作成したリストを先頭に挿入する（F4-3）
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false }),
       "wishlists.listByUser",
     );
     return (rows ?? []).map((r) => mapWishlist(r, toNumber(r.wishlist_items?.[0]?.count)));
@@ -763,10 +777,18 @@ class SupabaseWishlistsRepo implements WishlistsRepo {
     }));
   }
 
+  /**
+   * service role で読む：RLS で他人のリストが null（404）になると 9.1 の「権限なし → 403」を返せないため。
+   * 本人確認は service（getOwnedWishlist）が userId で行う（F4-2）。
+   */
   async getById(id: string): Promise<WishlistDetail | null> {
-    const { client } = await this.clients.user();
     const row = unwrapNullable<WishlistDetailRow>(
-      await client.from("wishlists").select("*, wishlist_items(*), plans(*)").eq("id", id).maybeSingle(),
+      await this.clients
+        .admin()
+        .from("wishlists")
+        .select("*, wishlist_items(*), plans(*)")
+        .eq("id", id)
+        .maybeSingle(),
       "wishlists.getById",
     );
     if (!row) return null;
@@ -895,10 +917,10 @@ class SupabasePlansRepo implements PlansRepo {
     return mapPlan(row);
   }
 
+  /** service role で読む（wishlists.getById と同じ理由。本人確認は getOwnedPlan が行う） */
   async getById(id: string): Promise<Plan | null> {
-    const { client } = await this.clients.user();
     const row = unwrapNullable<PlanRow>(
-      await client.from("plans").select("*").eq("id", id).maybeSingle(),
+      await this.clients.admin().from("plans").select("*").eq("id", id).maybeSingle(),
       "plans.getById",
     );
     return row ? mapPlan(row) : null;
@@ -1086,12 +1108,14 @@ class SupabaseReportsRepo implements ReportsRepo {
     private readonly posts: SupabasePostsRepo,
   ) {}
 
+  /** 未処理（open）の通報数。解決済みを含めると再表示後の 1 件で再び非表示になってしまう（F3-02） */
   private async countByPost(postId: string): Promise<number> {
     const { count, error } = await this.clients
       .admin()
       .from("reports")
       .select("id", { count: "exact", head: true })
-      .eq("post_id", postId);
+      .eq("post_id", postId)
+      .eq("status", "open");
     if (error) throw new Error(`reports.count: ${error.message}`);
     return count ?? 0;
   }
@@ -1179,12 +1203,37 @@ class SupabaseStorageRepo implements StorageRepo {
     return targets;
   }
 
+  /**
+   * 一時ファイルの実サイズと形式を確認する（api-02）。バケットの file_size_limit / allowed_mime_types が一次の守りで、
+   * ここは二重の確認。超過・不正な形式は 413 PAYLOAD_TOO_LARGE（service はそのまま投げ直す）。
+   * メタデータが取れないときは判定しない（存在しなければ move が失敗する）。
+   */
+  private async assertUploadedImage(path: string): Promise<void> {
+    const { data, error } = await this.bucket().info(path);
+    if (error || !data) return;
+    const size = typeof data.size === "number" ? data.size : null;
+    const contentType =
+      typeof data.contentType === "string" ? data.contentType.split(";")[0].trim().toLowerCase() : null;
+    if (size != null && size > LIMITS.convertedImageMaxBytes) {
+      throw new ApiError("PAYLOAD_TOO_LARGE", "変換後の画像は1枚あたり2MB以内にしてください", [
+        { field: "images", reason: "max_size" },
+      ]);
+    }
+    if (contentType && !(STORED_IMAGE_TYPES as readonly string[]).includes(contentType)) {
+      throw new ApiError("PAYLOAD_TOO_LARGE", "写真は WebP または JPEG に変換してアップロードしてください", [
+        { field: "images", reason: "invalid" },
+      ]);
+    }
+  }
+
   async finalizePostImages(
     postId: string,
     images: { fullPath: string; thumbPath: string }[],
   ): Promise<{ fullPath: string; thumbPath: string }[]> {
     const out: { fullPath: string; thumbPath: string }[] = [];
     for (const img of images) {
+      await this.assertUploadedImage(img.fullPath);
+      await this.assertUploadedImage(img.thumbPath);
       const imageId = newId();
       const fullPath = `posts/${postId}/${imageId}${extOf(img.fullPath)}`;
       const thumbPath = `posts/${postId}/${imageId}_t${extOf(img.thumbPath)}`;

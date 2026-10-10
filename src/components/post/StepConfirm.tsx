@@ -72,7 +72,7 @@ export function StepConfirm({
               新しいスポットとして登録
             </Badge>
             {location.newSpot.address ? (
-              <p className="text-sm text-text-muted">{location.newSpot.address}</p>
+              <p className="text-base text-text-muted">{location.newSpot.address}</p>
             ) : null}
           </div>
         ) : null}

@@ -17,4 +17,10 @@ export * from "./SuspendedNotice";
 export * from "./PageHeader";
 export * from "./Avatar";
 export * from "./PhotoImage";
-export { useIsDesktop, useMediaQuery, useLockBodyScroll, useEscapeKey } from "./useLockBodyScroll";
+export {
+  useIsDesktop,
+  useMediaQuery,
+  useLockBodyScroll,
+  useEscapeKey,
+  useFocusTrap,
+} from "./useLockBodyScroll";

@@ -22,6 +22,7 @@ import { StepConfirm } from "./StepConfirm";
 import { StepContent, validateContent } from "./StepContent";
 import { StepLocation } from "./StepLocation";
 import { StepPhotos, canProceedPhotos } from "./StepPhotos";
+import { UPLOAD_EXPIRED_MESSAGE, isImageUploadError } from "./uploadError";
 import {
   EMPTY_CONTENT,
   type ContentValue,
@@ -161,10 +162,19 @@ export function PostWizard({ initialSpot = null }: PostWizardProps) {
           setSubmit({ phase: "conflict", candidates: extractConflictCandidates(err.details) });
           return;
         }
-        if (err.code === "VALIDATION_ERROR" || err.code === "FORBIDDEN" || err.code === "NOT_FOUND") {
-          // 一時アップロードが期限切れなどの場合は再アップロードから
-          if (err.code === "NOT_FOUND") uploadedRef.current = null;
-          setSubmit({ phase: "error", message: err.message, retryable: err.code === "NOT_FOUND" });
+        if (err.code === "NOT_FOUND" || isImageUploadError(err)) {
+          // 一時アップロードが期限切れ・不正（400 upload_missing / invalid_path、404）の場合は
+          // 保持している tmp パスを捨て、再試行で写真を再アップロードする
+          uploadedRef.current = null;
+          setSubmit({
+            phase: "error",
+            message: isImageUploadError(err) ? UPLOAD_EXPIRED_MESSAGE : err.message,
+            retryable: true,
+          });
+          return;
+        }
+        if (err.code === "VALIDATION_ERROR" || err.code === "FORBIDDEN") {
+          setSubmit({ phase: "error", message: err.message, retryable: false });
           return;
         }
       }
@@ -227,7 +237,7 @@ export function PostWizard({ initialSpot = null }: PostWizardProps) {
                   >
                     <span className="flex min-w-0 flex-1 flex-col text-left">
                       <span className="truncate">{s.name}</span>
-                      <span className="text-sm text-text-muted">投稿 {s.postCount} 件</span>
+                      <span className="text-base text-text-muted">投稿 {s.postCount} 件</span>
                     </span>
                   </Button>
                 </li>

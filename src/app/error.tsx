@@ -34,7 +34,7 @@ export default function ErrorPage({ error, retry, reset }: ErrorPageProps) {
         <p className="text-base text-text-muted">
           時間をおいて再試行してください。繰り返し発生する場合は開発者にお知らせください。
         </p>
-        {error.digest ? <p className="text-base text-text-faint">識別子：{error.digest}</p> : null}
+        {error.digest ? <p className="text-base text-text-muted">識別子：{error.digest}</p> : null}
         <div className="flex w-full flex-col gap-2 sm:flex-row sm:justify-center">
           {onRetry ? (
             <Button leftIcon="refresh-cw" onClick={() => onRetry()}>

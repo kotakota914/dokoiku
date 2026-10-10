@@ -3,13 +3,15 @@
  * 1. 行列に区間が無いスポット（no_route）と、その日が定休日などで入れないスポット（opening_hours）を先に外す。
  * 2. 候補順を作り、feasible なものから点数最小を採用する。
  * 3. 残らなければ、「必ず行きたい」以外から外したときに点数が最も良くなるものを 1 つ外して繰り返す（time_limit）。
+ *    どれを外すかの比較は、残りが多いときは 2-opt 系の候補だけで行い、外したあとの集合だけを全探索する
+ *    （10 か所で終了時刻が厳しいときに 9 × 8! 回の計算を避ける。F-5 受け入れ基準の 5 秒以内）。
  * 4. 「必ず行きたい」だけでも入らなければ items を空にし、全スポットを time_limit で skipped にする。
  */
 import type { SkipReason } from "@/lib/domain/types";
 import { spotKey } from "@/lib/utils/geo";
 import { hhmmToMinutes, jstWeekday, minutesToHHMM } from "@/lib/utils/time";
 import { buildSchedule, type ScheduleResult } from "./schedule";
-import { candidateOrders, type SearchContext } from "./search";
+import { candidateOrders, heuristicOrders, type SearchContext } from "./search";
 import { score } from "./score";
 import type { PlannerInput, PlannerOutput, PlannerSpot, TravelMatrix } from "./types";
 
@@ -23,6 +25,9 @@ interface Evaluation {
 
 /** feasible でない候補の比較用：点数に終了時刻の超過分を大きく加える */
 const INFEASIBLE_PENALTY = 1_000_000;
+
+/** 外す候補の比較で全探索を使う残りスポット数の上限（これを超えると 2-opt 系の候補だけで比較する） */
+const EXHAUSTIVE_COMPARE_MAX_SPOTS = 6;
 
 function hasLeg(matrix: TravelMatrix, from: string, to: string): boolean {
   return from === to || matrix.has(`${from}|${to}`);
@@ -88,7 +93,16 @@ export function removeClosed(
   return { kept, removed };
 }
 
-function evaluate(spots: readonly PlannerSpot[], input: PlannerInput, ctx: SearchContext): Evaluation {
+/**
+ * 候補集合を評価する。quick=true は外す候補の比較用で、全順列の代わりに 2-opt 系の候補だけを使う
+ * （feasible が見つかれば十分に良い順なので、その集合は呼び出し側で改めて全探索する）。
+ */
+function evaluate(
+  spots: readonly PlannerSpot[],
+  input: PlannerInput,
+  ctx: SearchContext,
+  quick = false,
+): Evaluation {
   const opts = {
     startMin: input.startMin,
     endMin: input.endMin,
@@ -109,7 +123,7 @@ function evaluate(spots: readonly PlannerSpot[], input: PlannerInput, ctx: Searc
     const rest = spots.filter((s) => !input.fixedOrder!.includes(s.id));
     candidates = [ordered.concat(rest)];
   } else {
-    candidates = candidateOrders(spots, ctx);
+    candidates = quick ? heuristicOrders(spots, ctx) : candidateOrders(spots, ctx);
   }
 
   let best: Evaluation["best"] = null;
@@ -134,7 +148,11 @@ function evaluate(spots: readonly PlannerSpot[], input: PlannerInput, ctx: Searc
 }
 
 export function planRoute(input: PlannerInput): PlannerOutput {
-  const ctx: SearchContext = { matrix: input.matrix, originKey: input.originKey, destinationKey: input.destinationKey };
+  const ctx: SearchContext = {
+    matrix: input.matrix,
+    originKey: input.originKey,
+    destinationKey: input.destinationKey,
+  };
   const skipped: { spotId: string; reason: SkipReason }[] = [];
 
   const closed = removeClosed(input.spots, input.date, input.startMin, input.endMin);
@@ -151,17 +169,19 @@ export function planRoute(input: PlannerInput): PlannerOutput {
       for (const s of active) skipped.push({ spotId: s.id, reason: "time_limit" });
       return { items: [], skipped, totalTravelMin: 0, endAt: minutesToHHMM(input.startMin) };
     }
+    const quick = active.length - 1 > EXHAUSTIVE_COMPARE_MAX_SPOTS;
     let chosen: { spot: PlannerSpot; ev: Evaluation } | null = null;
     for (const s of optional) {
       const rest = active.filter((x) => x !== s);
-      const e = evaluate(rest, input, ctx);
+      const e = evaluate(rest, input, ctx, quick);
       if (!chosen || e.penalized < chosen.ev.penalized) chosen = { spot: s, ev: e };
     }
     // optional.length > 0 なので chosen は必ずある
     const c = chosen!;
     skipped.push({ spotId: c.spot.id, reason: "time_limit" });
     active = active.filter((x) => x !== c.spot);
-    ev = c.ev;
+    // 比較を 2-opt 系で行ったときは、残った集合を改めて全探索（8 か所以下なら全順列）で評価する
+    ev = quick ? evaluate(active, input, ctx) : c.ev;
   }
 
   const { result } = ev.best;

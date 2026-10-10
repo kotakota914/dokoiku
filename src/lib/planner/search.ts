@@ -137,10 +137,14 @@ function dedupe(orders: PlannerSpot[][]): PlannerSpot[][] {
   return out;
 }
 
+/** 最近傍法 → 2-opt＋Or-opt の候補。最良（最後）を先頭に、途中の改善解も含める。スポット数に関係なく全探索しない */
+export function heuristicOrders(spots: readonly PlannerSpot[], ctx: SearchContext): PlannerSpot[][] {
+  const history = twoOpt(nearestNeighborOrder(spots, ctx), ctx);
+  return dedupe(history.slice().reverse());
+}
+
 /** 訪問順の候補。最良と思われるものを先頭に返す */
 export function candidateOrders(spots: readonly PlannerSpot[], ctx: SearchContext): PlannerSpot[][] {
   if (spots.length <= PLAN_DEFAULTS.exhaustiveMaxSpots) return permutations(spots);
-  const history = twoOpt(nearestNeighborOrder(spots, ctx), ctx);
-  // 最良（最後）を先頭に、途中の改善解も候補に含める
-  return dedupe(history.slice().reverse());
+  return heuristicOrders(spots, ctx);
 }

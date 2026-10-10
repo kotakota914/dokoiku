@@ -298,8 +298,10 @@ create policy post_images_delete_own on public.post_images for delete
   using (exists (select 1 from public.posts p where p.id = post_id and p.user_id = auth.uid()));
 
 -- likes：読み取りは全員。追加・取り消しは本人のみ
+-- likes：件数は posts.like_count / spots.like_count（トリガー）で全員に公開する。行（誰が何にいいねしたか）は本人と管理者だけ（api-05）
 drop policy if exists likes_select_all on public.likes;
-create policy likes_select_all on public.likes for select using (true);
+drop policy if exists likes_select_own on public.likes;
+create policy likes_select_own on public.likes for select using (user_id = auth.uid() or public.is_admin());
 drop policy if exists likes_insert_own on public.likes;
 create policy likes_insert_own on public.likes for insert with check (user_id = auth.uid());
 drop policy if exists likes_delete_own on public.likes;
@@ -527,15 +529,20 @@ stable
 security definer
 set search_path = public, extensions
 as $$
-  with base as (
-    select s.*, (s.post_count + s.like_count) as score,
-      -- like のワイルドカードをエスケープしたキーワード
-      '%' || replace(replace(replace(coalesce(p_keyword, ''), '\', '\\'), '%', '\%'), '_', '\_') || '%' as pattern
-    from public.spots s
+  -- memory 実装（SpotsRepo.search）と同じ部分一致：都道府県・市区町村は含む一致、キーワードは名前・住所・都道府県・市区町村のいずれか（F3-07）
+  with q as (
+    select
+      '%' || replace(replace(replace(coalesce(p_keyword, ''), '\', '\\'), '%', '\%'), '_', '\_') || '%' as pattern,
+      '%' || replace(replace(replace(coalesce(p_prefecture, ''), '\', '\\'), '%', '\%'), '_', '\_') || '%' as pref_pattern,
+      '%' || replace(replace(replace(coalesce(p_city, ''), '\', '\\'), '%', '\%'), '_', '\_') || '%' as city_pattern
+  ),
+  base as (
+    select s.*, (s.post_count + s.like_count) as score, q.pattern
+    from public.spots s, q
     where s.post_count > 0
       and (p_category is null or s.category = p_category)
-      and (p_prefecture is null or p_prefecture = '' or s.prefecture = p_prefecture)
-      and (p_city is null or p_city = '' or s.city = p_city or s.address like '%' || p_city || '%')
+      and (p_prefecture is null or p_prefecture = '' or coalesce(s.prefecture, '') ilike q.pref_pattern)
+      and (p_city is null or p_city = '' or coalesce(s.city, '') ilike q.city_pattern or coalesce(s.address, '') ilike q.city_pattern)
   )
   select
     b.id,
@@ -551,7 +558,13 @@ as $$
     b.score,
     b.created_at
   from base b
-  where (p_keyword is null or p_keyword = '' or b.name ilike b.pattern or coalesce(b.address, '') ilike b.pattern)
+  where (
+      p_keyword is null or p_keyword = ''
+      or b.name ilike b.pattern
+      or coalesce(b.address, '') ilike b.pattern
+      or coalesce(b.prefecture, '') ilike b.pattern
+      or coalesce(b.city, '') ilike b.pattern
+    )
     and (
       p_cursor_id is null
       or (p_sort = 'newest' and (b.created_at, b.id) < (p_cursor_created_at, p_cursor_id))

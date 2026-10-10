@@ -108,6 +108,8 @@ Supabase Free の目安（2026/10 時点。Dashboard > Settings > Usage で実�
 
 使用量は `api_usage`（provider = `supabase`、feature = `post_create`、period = `YYYY-MM`）に外部から書き込み、`USAGE_SUSPEND_RATIO`（0.8）を超えたら `GET /api/v1/system/status` が停止中として返す。
 
+Supabase Free には Spend cap など上限を設定する項目が無い。外部サービス側で設定できる上限（F-8-6）は [docs/setup.md](./setup.md) 5 章「サービス側の上限（クォータ）設定」を参照。
+
 ## 8. ローカルでの migration 検証
 
 PostgreSQL 16 ＋ PostGIS 3.x があれば、Supabase に接続せずに検証できる。

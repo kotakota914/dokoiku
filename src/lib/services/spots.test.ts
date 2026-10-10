@@ -108,6 +108,14 @@ describe("getNearbySpots / canCreateSpot", () => {
     expect(ng.canCreate).toBe(false);
   });
 
+  it("accuracy を省略（誤差不明）すると canCreate: false", async () => {
+    const q = nearbyQuerySchema.parse({ ...KIYOMIZU });
+    expect(q.accuracy).toBeUndefined();
+    const res = await getNearbySpots(repo, q);
+    expect(res.canCreate).toBe(false);
+    expect(res.spots.length).toBeGreaterThan(0);
+  });
+
   it("半径内のスポットを近い順に返し、distanceM を含む", async () => {
     const res = await getNearbySpots(repo, nearbyQuerySchema.parse({ ...KIYOMIZU }));
     expect(res.spots.length).toBeGreaterThan(0);
@@ -240,6 +248,27 @@ describe("Route Handlers", () => {
     const ok = await GET(get(`/spots?bbox=${KYOTO_BBOX}&zoom=5`), noParams);
     expect(ok.status).toBe(200);
     expect((await ok.json()).mode).toBe("heatmap");
+  });
+
+  it("GET /spots/{spotId} と /spots/{spotId}/posts は ID が UUID でなければ 400、無ければ 404", async () => {
+    const { GET: getSpot } = await import("@/app/api/v1/spots/[spotId]/route");
+    const { GET: getSpotPosts } = await import("@/app/api/v1/spots/[spotId]/posts/route");
+    const bad = await getSpot(get("/spots/abc"), { params: Promise.resolve({ spotId: "abc" }) });
+    expect(bad.status).toBe(400);
+    expect((await bad.json()).error.code).toBe("VALIDATION_ERROR");
+    const badPosts = await getSpotPosts(get("/spots/abc/posts"), {
+      params: Promise.resolve({ spotId: "abc" }),
+    });
+    expect(badPosts.status).toBe(400);
+    const missing = await getSpot(get(`/spots/${UNKNOWN_ID}`), {
+      params: Promise.resolve({ spotId: UNKNOWN_ID }),
+    });
+    expect(missing.status).toBe(404);
+    const ok = await getSpot(get(`/spots/${KIYOMIZU_ID}`), {
+      params: Promise.resolve({ spotId: KIYOMIZU_ID }),
+    });
+    expect(ok.status).toBe(200);
+    expect((await ok.json()).name).toBe("清水寺");
   });
 
   it("GET /spots/nearby は未ログインなら 401、ログイン中は canCreate を返す", async () => {

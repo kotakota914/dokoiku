@@ -137,7 +137,7 @@ export function PhotoPicker({
                     <span className="text-base">変換中</span>
                   </div>
                 )}
-                <span className="absolute left-2 top-2 rounded-full border border-border bg-surface px-2 py-0.5 text-sm font-medium text-text">
+                <span className="absolute left-2 top-2 rounded-full border border-border bg-surface px-2 py-0.5 text-base font-medium text-text">
                   {index + 1}
                 </span>
               </div>

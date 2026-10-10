@@ -18,7 +18,7 @@ export interface PlanResultViewProps {
 /** F-5-5：入らなかった理由の文言 */
 export const SKIP_REASON_LABELS: Record<SkipReason, string> = {
   time_limit: "時間が足りません",
-  no_route: "経路が見つかりませんでした",
+  no_route: "この区間の経路が見つかりませんでした",
   opening_hours: "営業時間外",
   deleted: "削除されました",
 };

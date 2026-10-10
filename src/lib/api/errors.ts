@@ -28,7 +28,13 @@ export class ApiError extends Error {
   }
 
   toBody(): ApiErrorBody {
-    return { error: { code: this.code, message: this.message, ...(this.details !== undefined ? { details: this.details } : {}) } };
+    return {
+      error: {
+        code: this.code,
+        message: this.message,
+        ...(this.details !== undefined ? { details: this.details } : {}),
+      },
+    };
   }
 
   static unauthorized(message = "ログインが必要です") {
@@ -53,6 +59,10 @@ export class ApiError extends Error {
     return new ApiError("UPSTREAM_ERROR", message);
   }
   static suspended(feature: string, message?: string) {
-    return new ApiError("FEATURE_SUSPENDED", message ?? "無料枠の上限に近づいたため、この機能は現在利用できません", { feature });
+    return new ApiError(
+      "FEATURE_SUSPENDED",
+      message ?? "無料枠の上限に近づいたため、この機能は現在利用できません",
+      { feature },
+    );
   }
 }

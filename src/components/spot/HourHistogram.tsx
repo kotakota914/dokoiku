@@ -6,7 +6,7 @@ export interface HourHistogramProps {
   className?: string;
 }
 
-/** 3 時間おきに目盛りラベルを出す */
+/** 3 時間おきに目盛りラベルを出す（目盛は補助数値なので 14px。docs/decisions.md） */
 const LABEL_HOURS = [0, 3, 6, 9, 12, 15, 18, 21];
 
 /** 24 要素に正規化する（足りなければ 0 埋め、多ければ切り捨て） */
@@ -84,7 +84,7 @@ export function HourHistogram({ histogram, className }: HourHistogramProps) {
         </div>
         <div className="flex gap-0.5 sm:gap-1" aria-hidden="true">
           {values.map((_, h) => (
-            <div key={h} className="flex-1 text-center text-xs leading-4 text-text-muted">
+            <div key={h} className="flex-1 text-center text-sm leading-5 text-text-muted">
               {LABEL_HOURS.includes(h) ? h : ""}
             </div>
           ))}

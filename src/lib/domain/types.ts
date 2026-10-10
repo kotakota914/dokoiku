@@ -53,7 +53,9 @@ export interface Spot {
 }
 
 /** 曜日ごとの営業時間（0=日〜6=土）。null の曜日は定休日。未設定なら判定しない */
-export type OpeningHours = Partial<Record<"0" | "1" | "2" | "3" | "4" | "5" | "6", { open: string; close: string } | null>>;
+export type OpeningHours = Partial<
+  Record<"0" | "1" | "2" | "3" | "4" | "5" | "6", { open: string; close: string } | null>
+>;
 
 /** GET /spots、検索結果、リスト内などで使う要約 */
 export interface SpotSummary {
@@ -87,8 +89,7 @@ export interface HeatPoint {
 }
 
 export type SpotsInViewResponse =
-  | { mode: "spots"; spots: SpotSummary[] }
-  | { mode: "heatmap"; points: HeatPoint[] };
+  { mode: "spots"; spots: SpotSummary[] } | { mode: "heatmap"; points: HeatPoint[] };
 
 export interface NearbySpot extends SpotSummary {
   distanceM: number;

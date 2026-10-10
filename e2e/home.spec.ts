@@ -40,6 +40,24 @@ test.describe("ホーム（地図）", () => {
     await expect(page.getByRole("heading", { name: spot.name })).toBeVisible();
   });
 
+  test("詳細の「戻る」で地図に戻ると、URL ハッシュ（地図の位置）が保たれる（ADR-0017）", async ({ page }) => {
+    const spot = SPOTS.fushimiInari;
+    await page.goto(`/#14/${spot.lat}/${spot.lng}`);
+    const pin = pinLocator(page, spot.name);
+    await expect(pin).toBeVisible();
+    await pin.click();
+    const sheet = page
+      .getByRole("dialog", { name: spot.name })
+      .or(page.getByRole("complementary", { name: "表示範囲のスポット" }));
+    await sheet.getByRole("region", { name: spot.name }).getByRole("link", { name: "詳細を見る" }).click();
+    await expect(page).toHaveURL(new RegExp(`/spots/${spot.id}$`));
+
+    await page.getByRole("button", { name: "戻る", exact: true }).click();
+    await expect(page).toHaveURL(/\/#14\/34\.967/);
+    await expect(page.locator(MAP)).toBeVisible();
+    await expect(pinLocator(page, spot.name)).toBeVisible();
+  });
+
   test("カテゴリで絞り込むとピンの数が変わる", async ({ page }) => {
     // 河原町周辺：グルメ・歴史・写真映え・その他が混在する
     await page.goto("/#14/35.0035/135.7705");

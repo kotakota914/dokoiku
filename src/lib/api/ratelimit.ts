@@ -18,6 +18,16 @@ export function checkRateLimit(key: string, limit: number, windowMs: number, now
   return true;
 }
 
+/**
+ * 枠を消費せずに「今 1 件通せるか」だけを返す。
+ * 投稿のように「成功した操作だけを数える」場合は、入口で peek し、成功後に checkRateLimit で加算する。
+ */
+export function peekRateLimit(key: string, limit: number, windowMs: number, now = Date.now()): boolean {
+  const b = buckets.get(key);
+  if (!b || now - b.windowStart >= windowMs) return true;
+  return b.count < limit;
+}
+
 /** テスト用 */
 export function resetRateLimits() {
   buckets.clear();

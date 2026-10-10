@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import { Icon, type IconName } from "./icons";
 import { IconButton } from "./IconButton";
@@ -12,10 +13,18 @@ export interface ToastOptions {
   message: string;
   /** 自動で消えるまでの時間（ms）。0 なら手動で閉じるまで残す */
   durationMs?: number;
+  /** 次の画面への導線（例：「リストを見る」）。押すとトーストを閉じて移動する */
+  action?: ToastAction;
 }
 
-interface ToastItem extends Required<ToastOptions> {
+export interface ToastAction {
+  label: string;
+  href: string;
+}
+
+interface ToastItem extends Required<Omit<ToastOptions, "action">> {
   id: number;
+  action: ToastAction | null;
 }
 
 export interface ToastApi {
@@ -29,6 +38,8 @@ export interface ToastApi {
 const ToastContext = createContext<ToastApi | null>(null);
 
 const DEFAULT_DURATION: Record<ToastType, number> = { success: 4000, info: 4000, error: 6000 };
+/** 導線付きは押す時間を確保するため少し長く残す */
+const ACTION_DURATION = 8000;
 const ICON: Record<ToastType, IconName> = { success: "check", error: "circle-alert", info: "info" };
 const STYLE: Record<ToastType, string> = {
   success: "bg-success-soft text-success",
@@ -50,10 +61,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const show = useCallback(
-    ({ type = "info", message, durationMs }: ToastOptions) => {
+    ({ type = "info", message, durationMs, action }: ToastOptions) => {
       const id = ++seq.current;
-      const duration = durationMs ?? DEFAULT_DURATION[type];
-      setItems((prev) => [...prev.slice(-2), { id, type, message, durationMs: duration }]);
+      const duration = durationMs ?? (action ? ACTION_DURATION : DEFAULT_DURATION[type]);
+      setItems((prev) => [
+        ...prev.slice(-2),
+        { id, type, message, durationMs: duration, action: action ?? null },
+      ]);
       if (duration > 0)
         timers.current.set(
           id,
@@ -94,6 +108,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           >
             <Icon name={ICON[t.type]} size={20} />
             <p className="flex-1 text-base text-text">{t.message}</p>
+            {t.action ? (
+              <Link
+                href={t.action.href}
+                onClick={() => dismiss(t.id)}
+                className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-card px-2 text-base font-medium text-primary-strong underline-offset-2 hover:underline"
+              >
+                {t.action.label}
+                <Icon name="chevron-right" size={16} />
+              </Link>
+            ) : null}
             <IconButton
               icon="x"
               aria-label="閉じる"

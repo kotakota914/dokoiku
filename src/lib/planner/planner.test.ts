@@ -8,6 +8,7 @@ import {
   candidateOrders,
   computeStayMinutes,
   isInBestTime,
+  isLunchSkipped,
   pathCostSec,
   permutations,
   planRoute,
@@ -70,7 +71,11 @@ function planeMatrix(points: Record<string, [number, number]>): TravelMatrix {
   return m;
 }
 
-function baseInput(spots: PlannerSpot[], matrix: TravelMatrix, overrides: Partial<PlannerInput> = {}): PlannerInput {
+function baseInput(
+  spots: PlannerSpot[],
+  matrix: TravelMatrix,
+  overrides: Partial<PlannerInput> = {},
+): PlannerInput {
   return {
     spots,
     originKey: ORIGIN_KEY,
@@ -88,8 +93,16 @@ function baseInput(spots: PlannerSpot[], matrix: TravelMatrix, overrides: Partia
 
 describe("computeStayMinutes（11.1）", () => {
   it("投稿3件未満はカテゴリの標準値", () => {
-    expect(computeStayMinutes(spot("a", { category: "nature", postCount: 2, stayMinutesMedian: 120 }), [], "normal")).toBe(60);
-    expect(computeStayMinutes(spot("a", { category: "photogenic" }), [], "normal")).toBe(CATEGORY_DEFAULT_STAY_MIN.photogenic);
+    expect(
+      computeStayMinutes(
+        spot("a", { category: "nature", postCount: 2, stayMinutesMedian: 120 }),
+        [],
+        "normal",
+      ),
+    ).toBe(60);
+    expect(computeStayMinutes(spot("a", { category: "photogenic" }), [], "normal")).toBe(
+      CATEGORY_DEFAULT_STAY_MIN.photogenic,
+    );
   });
   it("投稿3件以上で中央値があればそれを使う", () => {
     expect(computeStayMinutes(spot("a", { postCount: 3, stayMinutesMedian: 120 }), [], "normal")).toBe(120);
@@ -147,8 +160,24 @@ describe("buildSchedule（11.5）", () => {
     });
     expect(r.feasible).toBe(true);
     expect(r.items).toEqual([
-      { type: "spot", spotId: "a", arrive: "09:10", stayMin: 45, depart: "09:55", travelMinToNext: 10, inBestTime: false },
-      { type: "spot", spotId: "b", arrive: "10:05", stayMin: 45, depart: "10:50", travelMinToNext: 10, inBestTime: false },
+      {
+        type: "spot",
+        spotId: "a",
+        arrive: "09:10",
+        stayMin: 45,
+        depart: "09:55",
+        travelMinToNext: 10,
+        inBestTime: false,
+      },
+      {
+        type: "spot",
+        spotId: "b",
+        arrive: "10:05",
+        stayMin: 45,
+        depart: "10:50",
+        travelMinToNext: 10,
+        inBestTime: false,
+      },
     ]);
     expect(r.endMin).toBe(hhmmToMinutes("11:00"));
     expect(r.totalTravelMin).toBe(30);
@@ -169,7 +198,13 @@ describe("buildSchedule（11.5）", () => {
       matrix,
     });
     const lunch = r.items.find((i) => i.type === "lunch");
-    expect(lunch).toEqual({ type: "lunch", arrive: "12:20", stayMin: 60, depart: "13:20", travelMinToNext: 10 });
+    expect(lunch).toEqual({
+      type: "lunch",
+      arrive: "12:20",
+      stayMin: 60,
+      depart: "13:20",
+      travelMinToNext: 10,
+    });
     expect(r.items.map((i) => i.type)).toEqual(["spot", "spot", "lunch", "spot"]);
     const bItem = r.items[1];
     expect(bItem.travelMinToNext).toBe(0);
@@ -195,6 +230,71 @@ describe("buildSchedule（11.5）", () => {
     expect(r.items.map((i) => i.type)).toEqual(["spot", "lunch", "spot"]);
     expect(r.items[1]).toMatchObject({ type: "lunch", arrive: "11:50", depart: "12:50", travelMinToNext: 0 });
     expect(r.items[2]).toMatchObject({ spotId: "b", arrive: "12:50" });
+  });
+
+  it("13:30 を過ぎてからは昼食を入れず、窓を跨ぐ滞在のときは lunchSkipped=true（F-5-1）", () => {
+    // a：09:10 到着、滞在 270 分 → 13:40 出発（11:30〜13:30 に空きが無い）
+    const a = spot("a", { postCount: 3, stayMinutesMedian: 270 });
+    const b = spot("b");
+    const matrix = lineMatrix({ [ORIGIN_KEY]: 0, [spotKey("a")]: 1, [spotKey("b")]: 2 });
+    const r = buildSchedule([a, b], {
+      startMin: hhmmToMinutes("09:00"),
+      endMin: hhmmToMinutes("18:00"),
+      originKey: ORIGIN_KEY,
+      destinationKey: null,
+      lunchBreak: true,
+      date: "2026-11-03",
+      matrix,
+    });
+    expect(r.items.map((i) => i.type)).toEqual(["spot", "spot"]);
+    expect(r.items[1]).toMatchObject({ spotId: "b", arrive: "13:50" });
+    expect(r.lunchSkipped).toBe(true);
+    expect(r.feasible).toBe(true);
+  });
+
+  it("窓の中（13:30 まで）に出発すればその直後に昼食が入り lunchSkipped=false", () => {
+    // a：09:10 到着、滞在 260 分 → 13:30 出発 → 昼食 13:30〜14:30
+    const a = spot("a", { postCount: 3, stayMinutesMedian: 260 });
+    const b = spot("b");
+    const matrix = lineMatrix({ [ORIGIN_KEY]: 0, [spotKey("a")]: 1, [spotKey("b")]: 2 });
+    const r = buildSchedule([a, b], {
+      startMin: hhmmToMinutes("09:00"),
+      endMin: hhmmToMinutes("18:00"),
+      originKey: ORIGIN_KEY,
+      destinationKey: null,
+      lunchBreak: true,
+      date: "2026-11-03",
+      matrix,
+    });
+    expect(r.items.map((i) => i.type)).toEqual(["spot", "lunch", "spot"]);
+    expect(r.items[1]).toMatchObject({ type: "lunch", arrive: "13:30", depart: "14:30" });
+    expect(r.lunchSkipped).toBe(false);
+  });
+
+  it("isLunchSkipped：昼食なし・窓の前に終わる日・窓の後に始まる日は false", () => {
+    const spotItem = (arrive: string, depart: string) =>
+      ({
+        type: "spot",
+        spotId: "a",
+        arrive,
+        stayMin: 45,
+        depart,
+        travelMinToNext: null,
+        inBestTime: false,
+      }) as const;
+    const lunchItem = {
+      type: "lunch",
+      arrive: "12:00",
+      stayMin: 60,
+      depart: "13:00",
+      travelMinToNext: null,
+    } as const;
+    expect(isLunchSkipped(false, hhmmToMinutes("09:00"), [spotItem("09:10", "14:00")])).toBe(false);
+    expect(isLunchSkipped(true, hhmmToMinutes("09:00"), [spotItem("09:10", "11:00")])).toBe(false);
+    expect(isLunchSkipped(true, hhmmToMinutes("09:00"), [])).toBe(false);
+    expect(isLunchSkipped(true, hhmmToMinutes("14:00"), [spotItem("14:10", "15:00")])).toBe(false);
+    expect(isLunchSkipped(true, hhmmToMinutes("09:00"), [spotItem("09:10", "11:00"), lunchItem])).toBe(false);
+    expect(isLunchSkipped(true, hhmmToMinutes("09:00"), [spotItem("09:10", "14:00")])).toBe(true);
   });
 
   it("営業時間外の到着は feasible=false", () => {
@@ -300,7 +400,9 @@ describe("planRoute（11.4〜11.7）", () => {
     const spots = [spot("c"), spot("a"), spot("b")];
     const matrix = lineMatrix({ [ORIGIN_KEY]: 0, [spotKey("a")]: 1, [spotKey("b")]: 2, [spotKey("c")]: 3 });
     const out = planRoute(baseInput(spots, matrix));
-    expect(out.items.filter((i) => i.type === "spot").map((i) => (i.type === "spot" ? i.spotId : ""))).toEqual(["a", "b", "c"]);
+    expect(
+      out.items.filter((i) => i.type === "spot").map((i) => (i.type === "spot" ? i.spotId : "")),
+    ).toEqual(["a", "b", "c"]);
     expect(out.totalTravelMin).toBe(30);
     expect(out.skipped).toEqual([]);
     expect(out.endAt).toBe("11:45");
@@ -338,7 +440,13 @@ describe("planRoute（11.4〜11.7）", () => {
 
   it("昼食休憩ありなら 11:30〜13:30 に lunch が入る", () => {
     const spots = [spot("a"), spot("b"), spot("c"), spot("d")];
-    const matrix = lineMatrix({ [ORIGIN_KEY]: 0, [spotKey("a")]: 1, [spotKey("b")]: 2, [spotKey("c")]: 3, [spotKey("d")]: 4 });
+    const matrix = lineMatrix({
+      [ORIGIN_KEY]: 0,
+      [spotKey("a")]: 1,
+      [spotKey("b")]: 2,
+      [spotKey("c")]: 3,
+      [spotKey("d")]: 4,
+    });
     const out = planRoute(baseInput(spots, matrix, { lunchBreak: true }));
     const lunch = out.items.find((i) => i.type === "lunch");
     expect(lunch).toBeDefined();
@@ -379,7 +487,13 @@ describe("planRoute（11.4〜11.7）", () => {
     const matrix = lineMatrix({ [ORIGIN_KEY]: 0, [spotKey("a")]: 1, [spotKey("b")]: 2 });
     const out = planRoute(baseInput(spots, matrix, { fixedOrder: ["b", "a"], stayOverrides: { b: 90 } }));
     expect(out.items.map((i) => (i.type === "spot" ? i.spotId : "lunch"))).toEqual(["b", "a"]);
-    expect(out.items[0]).toMatchObject({ spotId: "b", arrive: "09:20", stayMin: 90, depart: "10:50", travelMinToNext: 10 });
+    expect(out.items[0]).toMatchObject({
+      spotId: "b",
+      arrive: "09:20",
+      stayMin: 90,
+      depart: "10:50",
+      travelMinToNext: 10,
+    });
   });
 
   it("10 か所でも 5 秒以内に終わる", () => {
@@ -395,5 +509,22 @@ describe("planRoute（11.4〜11.7）", () => {
     expect(Date.now() - t0).toBeLessThan(5000);
     expect(out.items.length + out.skipped.length).toBeGreaterThanOrEqual(10);
     expect(hhmmToMinutes(out.endAt)).toBeLessThanOrEqual(hhmmToMinutes("15:00"));
+  });
+
+  it("10 か所で終了時刻が厳しく（11:00）除外が多段になっても 5 秒以内に終わる（F-5 受け入れ基準）", () => {
+    const ids = Array.from({ length: 10 }, (_, i) => `s${i}`);
+    const points: Record<string, [number, number]> = { [ORIGIN_KEY]: [0, 0] };
+    ids.forEach((id, i) => {
+      points[spotKey(id)] = [Math.cos(i) * 3 + 3, Math.sin(i * 1.7) * 3 + 3];
+    });
+    const matrix = planeMatrix(points);
+    const spots = ids.map((id) => spot(id));
+    const t0 = Date.now();
+    const out = planRoute(baseInput(spots, matrix, { lunchBreak: true, endMin: hhmmToMinutes("11:00") }));
+    expect(Date.now() - t0).toBeLessThan(5000);
+    expect(out.items.length).toBeGreaterThan(0);
+    expect(out.items.length + out.skipped.length).toBeGreaterThanOrEqual(10);
+    expect(out.skipped.every((s) => s.reason === "time_limit")).toBe(true);
+    expect(hhmmToMinutes(out.endAt)).toBeLessThanOrEqual(hhmmToMinutes("11:00"));
   });
 });

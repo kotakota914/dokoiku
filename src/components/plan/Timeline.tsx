@@ -3,6 +3,7 @@
 /**
  * 経路プランのタイムライン（F-5-4、F-5-6、F-5-8）。
  * - 出発地 → スポット（番号つき）→ 昼食休憩 → 到着地 を縦に並べ、行間に移動時間と Google マップのリンクを置く
+ *   （移動時間は次のスポット・到着地の行の直前にまとめて出し、昼食休憩の行には出さない）
  * - 並び替え：ドラッグ（grip-vertical ハンドル、キーボード操作も可）と上下ボタンの両方
  * - 滞在時間：「変更」→ 5 分刻みの Select
  */
@@ -135,18 +136,30 @@ export function Timeline({
     onReorder?.(next);
   }
 
-  // 各行の直前の移動時間：先頭は（出発時刻→最初の到着）、以降は直前行の travelMinToNext
+  /**
+   * 直前のスポット（無ければ出発地）から items[index]（index === items.length なら到着地）までの移動時間。
+   * 昼食行（travelMinToNext が 0 や null）を挟んでも、そこまでの区間の合計を次のスポットの行に出す。
+   */
   function travelBefore(index: number): number | null {
-    if (index === 0) {
+    let prevSpot = index - 1;
+    while (prevSpot >= 0 && items[prevSpot].type === "lunch") prevSpot -= 1;
+    if (prevSpot < 0) {
+      // 出発地からの最初の区間：出発時刻と最初の到着時刻の差（途中に昼食があればその分を除く）
       const first = items[0];
       if (!first) return null;
-      const diff = hhmmToMinutes(first.arrive) - hhmmToMinutes(startTime);
+      let diff = hhmmToMinutes(first.arrive) - hhmmToMinutes(startTime);
+      for (let k = 0; k < index; k += 1) {
+        const it = items[k];
+        if (it.type === "lunch") diff += it.travelMinToNext ?? 0;
+      }
       return diff >= 0 ? diff : null;
     }
-    return items[index - 1]?.travelMinToNext ?? null;
+    const base = items[prevSpot].travelMinToNext;
+    if (base === null) return null;
+    let total = base;
+    for (let k = prevSpot + 1; k < index; k += 1) total += items[k].travelMinToNext ?? 0;
+    return total;
   }
-
-  const lastItem = items[items.length - 1];
 
   return (
     <div className={cn("flex flex-col", busy && "opacity-60")} aria-busy={busy || undefined}>
@@ -156,12 +169,17 @@ export function Timeline({
         <SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
           <ol className="flex flex-col" aria-label="訪問順">
             {rows.map((row) => {
-              const minutes = travelBefore(row.index);
+              // 昼食行には移動時間を出さない（次のスポットの行にまとめる）
               const segment =
-                row.kind === "spot" && row.spot ? (
-                  <TravelSegment minutes={minutes} mode={mode} from={row.from} to={row.spot} />
+                row.kind === "lunch" ? null : row.spot ? (
+                  <TravelSegment
+                    minutes={travelBefore(row.index)}
+                    mode={mode}
+                    from={row.from}
+                    to={row.spot}
+                  />
                 ) : (
-                  <TravelSegment minutes={minutes} mode={mode} />
+                  <TravelSegment minutes={travelBefore(row.index)} mode={mode} />
                 );
               const position = spotOrder.indexOf(row.id);
               return (
@@ -193,7 +211,7 @@ export function Timeline({
       {destination ? (
         <>
           <TravelSegment
-            minutes={lastItem?.travelMinToNext ?? null}
+            minutes={items.length > 0 ? travelBefore(items.length) : null}
             mode={mode}
             from={lastPoint}
             to={{ lat: destination.lat, lng: destination.lng, name: destination.label || "到着地" }}

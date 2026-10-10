@@ -16,6 +16,7 @@ import {
   Clock,
   Coffee,
   ExternalLink,
+  EyeOff,
   Flag,
   Flame,
   Footprints,
@@ -37,6 +38,7 @@ import {
   Plus,
   RefreshCw,
   Route,
+  Save,
   Search,
   Share2,
   SlidersHorizontal,
@@ -44,6 +46,7 @@ import {
   Trash2,
   TrainFront,
   Trees,
+  TrendingUp,
   TriangleAlert,
   User,
   Utensils,
@@ -60,7 +63,11 @@ import {
 } from "@/lib/domain/constants";
 import { cn } from "./cn";
 
-/** 8.1 の対応表。アイコン名（kebab-case）→ lucide-react の実体 */
+/**
+ * 8.1 の対応表。アイコン名（kebab-case）→ lucide-react の実体。
+ * 対応表に無い用途（レビュー後に追加。docs/decisions.md）：人気 → trending-up、プラン保存 → save、
+ * 非表示 → eye-off、次へ・進む → chevron-right
+ */
 const ICONS = {
   map: MapIcon,
   bookmark: Bookmark,
@@ -75,6 +82,7 @@ const ICONS = {
   heart: Heart,
   star: Star,
   flame: Flame,
+  "trending-up": TrendingUp,
   route: Route,
   footprints: Footprints,
   car: Car,
@@ -83,6 +91,8 @@ const ICONS = {
   utensils: Utensils,
   coffee: Coffee,
   "share-2": Share2,
+  save: Save,
+  "eye-off": EyeOff,
   flag: Flag,
   pencil: Pencil,
   "trash-2": Trash2,
@@ -169,7 +179,7 @@ export function CategoryLabel({ category, size = 16, className, showLabel = true
 
 const POPULARITY_ICON: Record<Popularity, IconName> = {
   normal: "info",
-  popular: "flame",
+  popular: "trending-up",
   very_popular: "flame",
 };
 
@@ -186,13 +196,13 @@ export interface PopularityBadgeProps {
   className?: string;
 }
 
-/** 人気度バッジ（F-1-5）。色だけに頼らず文字ラベルを添える。大人気は flame */
+/** 人気度バッジ（F-1-5）。色だけに頼らず文字ラベルを添える。大人気は flame、人気は trending-up（1 アイコン 1 意味） */
 export function PopularityBadge({ popularity, hideNormal = true, className }: PopularityBadgeProps) {
   if (popularity === "normal" && hideNormal) return null;
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-sm font-medium leading-5",
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-base font-medium leading-6",
         POPULARITY_CLASS[popularity],
         className,
       )}

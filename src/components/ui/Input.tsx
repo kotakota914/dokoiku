@@ -4,9 +4,9 @@ import { useState, type ChangeEvent, type ComponentPropsWithRef, type ReactNode 
 import { Icon } from "./icons";
 import { cn } from "./cn";
 
-/** 入力欄の共通スタイル。16px 以上（iOS の自動ズーム防止） */
+/** 入力欄の共通スタイル。16px 以上（iOS の自動ズーム防止）。placeholder も 4.5 以上のコントラストにする */
 export const FIELD_CLASS =
-  "w-full rounded-card border border-border bg-surface px-3 text-base text-text placeholder:text-text-faint " +
+  "w-full rounded-card border border-border bg-surface px-3 text-base text-text placeholder:text-text-muted " +
   "focus:outline-2 focus:outline-offset-0 focus:outline-primary disabled:cursor-not-allowed disabled:bg-surface-muted " +
   "aria-invalid:border-danger";
 

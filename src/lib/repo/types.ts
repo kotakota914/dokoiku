@@ -140,7 +140,12 @@ export interface WishlistsRepo {
 }
 
 export interface PlansRepo {
-  create(input: { userId: string; wishlistId: string; params: PlanParams; result: PlanResult }): Promise<Plan>;
+  create(input: {
+    userId: string;
+    wishlistId: string;
+    params: PlanParams;
+    result: PlanResult;
+  }): Promise<Plan>;
   getById(id: string): Promise<Plan | null>;
   listByWishlist(wishlistId: string): Promise<PlanSummary[]>;
   delete(id: string): Promise<void>;
@@ -148,7 +153,10 @@ export interface PlansRepo {
 
 export interface TravelCacheRepo {
   /** 見つかったものだけ返す（期限切れは除く）。キーは `${fromKey}|${toKey}` */
-  getMany(pairs: { fromKey: string; toKey: string }[], mode: TravelMode): Promise<Map<string, TravelTimeEntry>>;
+  getMany(
+    pairs: { fromKey: string; toKey: string }[],
+    mode: TravelMode,
+  ): Promise<Map<string, TravelTimeEntry>>;
   putMany(entries: Omit<TravelTimeEntry, "fetchedAt">[]): Promise<void>;
   purgeExpired(olderThanDays: number): Promise<number>;
 }
@@ -156,7 +164,13 @@ export interface TravelCacheRepo {
 export interface ApiUsageRepo {
   get(provider: string, feature: Feature, period: string): Promise<ApiUsage | null>;
   /** 回数を加算して最新値を返す。limit は初回作成時に保存する */
-  increment(provider: string, feature: Feature, period: string, limit: number, by?: number): Promise<ApiUsage>;
+  increment(
+    provider: string,
+    feature: Feature,
+    period: string,
+    limit: number,
+    by?: number,
+  ): Promise<ApiUsage>;
   /** 使用量を絶対値で記録する（Supabase の容量など、外部から測って書き込む用） */
   set(provider: string, feature: Feature, period: string, count: number, limit: number): Promise<ApiUsage>;
   setSuspended(provider: string, feature: Feature, period: string, suspendedAt: string | null): Promise<void>;
@@ -165,8 +179,13 @@ export interface ApiUsageRepo {
 }
 
 export interface ReportsRepo {
-  /** 同じ投稿への二重通報は false。戻り値 count はその投稿の通報数 */
-  create(input: { postId: string; reporterId: string; reason: Report["reason"]; note: string | null }): Promise<{ created: boolean; count: number }>;
+  /** 同じ投稿への二重通報は false。戻り値 count はその投稿の未処理（open）の通報数（resolveByPost 後は数え直す） */
+  create(input: {
+    postId: string;
+    reporterId: string;
+    reason: Report["reason"];
+    note: string | null;
+  }): Promise<{ created: boolean; count: number }>;
   listOpen(paging: Paging): Promise<Page<Report & { post: PostView | null }>>;
   resolveByPost(postId: string): Promise<void>;
 }
@@ -175,7 +194,10 @@ export interface StorageRepo {
   /** 一時パスへの署名付きアップロード先を発行する */
   createSignedUploads(userId: string, files: UploadRequestFile[]): Promise<UploadTarget[]>;
   /** 一時パスを posts/{postId}/ へ移動し、確定パスを返す（存在しないパスは例外） */
-  finalizePostImages(postId: string, images: { fullPath: string; thumbPath: string }[]): Promise<{ fullPath: string; thumbPath: string }[]>;
+  finalizePostImages(
+    postId: string,
+    images: { fullPath: string; thumbPath: string }[],
+  ): Promise<{ fullPath: string; thumbPath: string }[]>;
   deleteObjects(paths: string[]): Promise<void>;
   publicUrl(path: string): string;
   /** 24時間以上前の一時ファイルを削除し、件数を返す */

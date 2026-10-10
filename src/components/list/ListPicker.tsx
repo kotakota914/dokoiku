@@ -3,7 +3,10 @@
 /**
  * 「リストに追加」の選択シート（F-4-3）。マップのボトムシート・スポット詳細から使う。
  * - open になったら GET /lists。未ログイン（401）ならログイン画面へ
- * - リストをタップで POST /lists/{id}/items。409 は「追加済みです」（F-4-2）、上限は API の文言をそのまま表示
+ * - リストをタップで POST /lists/{id}/items。409 のうち「追加済みです」（F-4-2）は info トースト、
+ *   30 か所の上限など他の 409 は API の文言をエラートーストでそのまま表示する
+ * - 上限（30 か所）に達したリストは選べない（circle-alert ＋「上限」のバッジ）
+ * - 追加に成功したらトーストに「リストを見る」の導線（S-07 へ。要件 7 章の遷移図）
  * - 「新しいリストを作る」で POST /lists → そのまま追加
  */
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -11,6 +14,7 @@ import { api, ApiClientError, errorMessage } from "@/lib/api/client";
 import { LIMITS } from "@/lib/domain/constants";
 import type { Wishlist } from "@/lib/domain/types";
 import {
+  Badge,
   BottomSheet,
   Button,
   EmptyState,
@@ -22,6 +26,18 @@ import {
 } from "@/components/ui";
 import { ListNameForm } from "./ListNameForm";
 import { useListApiError } from "./useListApiError";
+
+/** POST /lists/{id}/items が重複追加のときに返す文言（src/lib/services/lists.ts の ALREADY_ADDED_MESSAGE と同じ） */
+export const ALREADY_ADDED_MESSAGE = "追加済みです";
+
+/** 409 のうち「重複追加」だけを追加済みとして扱う（上限超過の 409 は別の文言で返る） */
+export function isAlreadyAddedError(err: unknown): boolean {
+  return err instanceof ApiClientError && err.code === "CONFLICT" && err.message === ALREADY_ADDED_MESSAGE;
+}
+
+export function listDetailHref(listId: string): string {
+  return `/lists/${encodeURIComponent(listId)}`;
+}
 
 export interface ListPickerProps {
   spotId: string;
@@ -91,7 +107,11 @@ export function ListPicker({ spotId, open, onClose, onAdded }: ListPickerProps) 
     setAddingId(list.id);
     try {
       await api.post(`/lists/${encodeURIComponent(list.id)}/items`, { spotId });
-      toast.success(`${list.name}に追加しました`);
+      toast.show({
+        type: "success",
+        message: `${list.name}に追加しました`,
+        action: { label: "リストを見る", href: listDetailHref(list.id) },
+      });
       setLists((prev) =>
         prev ? prev.map((l) => (l.id === list.id ? { ...l, itemCount: l.itemCount + 1 } : l)) : prev,
       );
@@ -99,8 +119,8 @@ export function ListPicker({ spotId, open, onClose, onAdded }: ListPickerProps) 
       close();
       return true;
     } catch (err) {
-      if (err instanceof ApiClientError && err.code === "CONFLICT") {
-        toast.info("追加済みです");
+      if (isAlreadyAddedError(err)) {
+        toast.info(ALREADY_ADDED_MESSAGE);
         close();
         return false;
       }
@@ -176,8 +196,9 @@ export function ListPicker({ spotId, open, onClose, onAdded }: ListPickerProps) 
                 <button
                   type="button"
                   onClick={() => void addTo(list)}
-                  disabled={addingId !== null}
+                  disabled={addingId !== null || full}
                   aria-busy={busy || undefined}
+                  aria-describedby={full ? `${list.id}-full` : undefined}
                   className={cn(
                     "flex min-h-14 w-full items-center gap-3 rounded-card border border-border bg-surface px-3 py-2 text-left transition-colors hover:bg-surface-muted",
                     "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
@@ -186,10 +207,21 @@ export function ListPicker({ spotId, open, onClose, onAdded }: ListPickerProps) 
                 >
                   <Icon name={busy ? "loader-circle" : "bookmark"} size={20} className="text-primary" />
                   <span className="min-w-0 flex-1 truncate text-base font-medium text-text">{list.name}</span>
-                  <span className={cn("text-base", full ? "text-warning" : "text-text-muted")}>
+                  {full ? (
+                    <Badge icon="circle-alert" tone="warning" className="shrink-0">
+                      上限
+                    </Badge>
+                  ) : null}
+                  <span className={cn("shrink-0 text-base", full ? "text-warning" : "text-text-muted")}>
                     {list.itemCount}/{LIMITS.itemsPerList}
                   </span>
                 </button>
+                {full ? (
+                  <p id={`${list.id}-full`} className="px-3 pt-1 text-base text-text-muted">
+                    リストは{LIMITS.itemsPerList}
+                    か所までです。追加するにはリストからスポットを減らしてください。
+                  </p>
+                ) : null}
               </li>
             );
           })}

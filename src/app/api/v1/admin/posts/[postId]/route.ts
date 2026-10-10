@@ -1,6 +1,6 @@
 /**
  * PATCH /api/v1/admin/posts/{postId}  投稿の非表示・再表示（F-7-3。管理者のみ）→ PostView
- * 再表示（public）するときは、その投稿の未処理の通報を解決済みにする。
+ * 非表示・再表示のどちらでも、その投稿の未処理の通報を解決済みにする（管理者が確認した扱い）。
  */
 import { json, parseBody, route } from "@/lib/api/handler";
 import { requireAdmin } from "@/lib/auth/server";

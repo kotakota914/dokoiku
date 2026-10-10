@@ -4,7 +4,14 @@ import { USAGE_LIMITS } from "@/lib/domain/constants";
 import type { ApiUsage, SuspendedFeature } from "@/lib/domain/types";
 import type { ApiUsageRepo } from "@/lib/repo/types";
 import type { NotifyLevel } from "./notify";
-import { checkAndCount, getSystemStatus, isSuspended, periodFor, recordAbsoluteUsage, suspendThreshold } from "./usage";
+import {
+  checkAndCount,
+  getSystemStatus,
+  isSuspended,
+  periodFor,
+  recordAbsoluteUsage,
+  suspendThreshold,
+} from "./usage";
 
 type NotifyFn = (message: string, level?: NotifyLevel) => Promise<void>;
 const notifySpy = () => vi.fn<NotifyFn>(async () => {});
@@ -38,7 +45,14 @@ function fakeUsageRepo(): ApiUsageRepo & { rows: Map<string, ApiUsage> } {
     listSuspended: async (periods): Promise<SuspendedFeature[]> =>
       [...rows.values()]
         .filter((r) => r.suspendedAt && periods.includes(r.period))
-        .map((r) => ({ feature: r.feature, provider: r.provider, period: r.period, count: r.count, limit: r.limit, suspendedAt: r.suspendedAt! })),
+        .map((r) => ({
+          feature: r.feature,
+          provider: r.provider,
+          period: r.period,
+          count: r.count,
+          limit: r.limit,
+          suspendedAt: r.suspendedAt!,
+        })),
   };
 }
 
@@ -99,6 +113,25 @@ describe("checkAndCount", () => {
     expect(notify).not.toHaveBeenCalled();
   });
 
+  it("日単位の上限があるキーは年月の行にも回数を記録する（F-8-1）。停止判定は日の行だけ", async () => {
+    const repo = fakeUsageRepo();
+    const notify = notifySpy();
+    const { provider, feature, limit } = USAGE_LIMITS.ors_matrix;
+    await checkAndCount(repo, "ors_matrix", 1, { now: NOW, notify });
+    await checkAndCount(repo, "ors_matrix", 2, { now: NOW, notify });
+    expect((await repo.get(provider, feature, "2026-10-10"))?.count).toBe(3);
+    expect((await repo.get(provider, feature, "2026-10"))?.count).toBe(3);
+
+    // 月の行がしきい値を超えていても停止しない（日の行で判定する）
+    await repo.set(provider, feature, "2026-10", limit, limit);
+    const u = await checkAndCount(repo, "ors_matrix", 1, { now: NOW, notify });
+    expect(u.period).toBe("2026-10-10");
+    expect(u.count).toBe(4);
+    expect((await repo.get(provider, feature, "2026-10"))?.suspendedAt).toBeNull();
+    expect(await isSuspended(repo, "route_planning", NOW)).toBe(false);
+    expect(notify).not.toHaveBeenCalled();
+  });
+
   it("期間が切り替わると自動で再開する（別の期間は別の行）", async () => {
     const repo = fakeUsageRepo();
     const notify = notifySpy();
@@ -138,11 +171,17 @@ describe("recordAbsoluteUsage（Q4：Supabase の容量）", () => {
     const notify = notifySpy();
     const { limit } = USAGE_LIMITS.supabase_storage;
 
-    const r1 = await recordAbsoluteUsage(repo, "supabase_storage", Math.floor(limit * 0.5), { now: NOW, notify });
+    const r1 = await recordAbsoluteUsage(repo, "supabase_storage", Math.floor(limit * 0.5), {
+      now: NOW,
+      notify,
+    });
     expect(r1).toMatchObject({ suspended: false, changed: false });
     expect(notify).not.toHaveBeenCalled();
 
-    const r2 = await recordAbsoluteUsage(repo, "supabase_storage", Math.ceil(limit * 0.85), { now: NOW, notify });
+    const r2 = await recordAbsoluteUsage(repo, "supabase_storage", Math.ceil(limit * 0.85), {
+      now: NOW,
+      notify,
+    });
     expect(r2).toMatchObject({ suspended: true, changed: true });
     expect(r2.usage.suspendedAt).toBeTruthy();
     expect(notify).toHaveBeenCalledTimes(1);
@@ -150,11 +189,17 @@ describe("recordAbsoluteUsage（Q4：Supabase の容量）", () => {
     expect(await isSuspended(repo, "post_create", NOW)).toBe(true);
 
     // 停止中のまま（通知は増えない）
-    const r3 = await recordAbsoluteUsage(repo, "supabase_storage", Math.ceil(limit * 0.9), { now: NOW, notify });
+    const r3 = await recordAbsoluteUsage(repo, "supabase_storage", Math.ceil(limit * 0.9), {
+      now: NOW,
+      notify,
+    });
     expect(r3).toMatchObject({ suspended: true, changed: false });
     expect(notify).toHaveBeenCalledTimes(1);
 
-    const r4 = await recordAbsoluteUsage(repo, "supabase_storage", Math.floor(limit * 0.5), { now: NOW, notify });
+    const r4 = await recordAbsoluteUsage(repo, "supabase_storage", Math.floor(limit * 0.5), {
+      now: NOW,
+      notify,
+    });
     expect(r4).toMatchObject({ suspended: false, changed: true });
     expect(notify).toHaveBeenCalledTimes(2);
     expect(notify.mock.calls[1][0]).toContain("再開");

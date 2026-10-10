@@ -29,6 +29,7 @@ import { getOwnedWishlist } from "./lists";
 export const PLAN_NOT_FOUND_MESSAGE = "プランが見つかりませんでした";
 export const SPOT_NOT_IN_LIST_MESSAGE = "リストに入っていないスポットが含まれています";
 export const ORDER_NOT_IN_SPOTS_MESSAGE = "対象に含まれないスポットが並び順に含まれています";
+export const ITEM_NOT_IN_SPOTS_MESSAGE = "対象に含まれないスポットがプランに含まれています";
 
 type PlanComputeDeps = Pick<Repository, "wishlists" | "spots" | "travelCache" | "apiUsage">;
 type PlanStoreDeps = Pick<Repository, "wishlists" | "plans">;
@@ -112,6 +113,41 @@ function orderedCoordinates(
 
 function hasSpotItem(items: readonly PlanItem[]): boolean {
   return items.some((i) => i.type === "spot");
+}
+
+/** 保存する出発地・到着地の座標の桁数（小数 3 桁 ≒ 100m）。利用者の現在地をそのまま残さない（13章） */
+export const SAVED_PLACE_DECIMALS = 3;
+
+export function roundCoordinate(value: number): number {
+  return Number(value.toFixed(SAVED_PLACE_DECIMALS));
+}
+
+function roundPlace<T extends LatLng>(place: T): T {
+  return { ...place, lat: roundCoordinate(place.lat), lng: roundCoordinate(place.lng) };
+}
+
+/**
+ * 保存するプランの出発地・到着地を約 100m に丸める（api-04）。
+ * 出発地が「現在地」かどうかはサーバーでは判別できないため、すべての出発地・到着地に適用する。
+ * 経路形状の先頭（出発地）と、到着地があれば末尾の点も同じ精度に丸める。
+ */
+export function coarsenSavedPlan(
+  params: PlanParams,
+  result: PlanResult,
+): { params: PlanParams; result: PlanResult } {
+  const coarse: PlanParams = {
+    ...params,
+    origin: roundPlace(params.origin),
+    destination: params.destination ? roundPlace(params.destination) : null,
+  };
+  if (!result.geometry || result.geometry.coordinates.length === 0) return { params: coarse, result };
+  const coordinates = result.geometry.coordinates.map((c) => [...c] as [number, number]);
+  const roundPoint = (i: number) => {
+    coordinates[i] = [roundCoordinate(coordinates[i][0]), roundCoordinate(coordinates[i][1])];
+  };
+  roundPoint(0);
+  if (params.destination) roundPoint(coordinates.length - 1);
+  return { params: coarse, result: { ...result, geometry: { ...result.geometry, coordinates } } };
 }
 
 /**
@@ -291,20 +327,36 @@ export async function recomputePlan(
   };
 }
 
-/** POST /plans（F-5-7）：リストは本人のもの */
+/**
+ * POST /plans（F-5-7）：リストは本人のもの。
+ * result の形はスキーマ（planSaveSchema）で検証済み。ここでは items / skipped の spotId が params.spotIds に
+ * 含まれること、同じスポットが 2 回入っていないことを確認する（違反は 400）。
+ * 出発地・到着地の座標は coarsenSavedPlan で約 100m に丸めてから保存する（現在地を保存しない。13章）。
+ */
 export async function savePlan(repo: PlanStoreDeps, userId: string, input: PlanSaveInput): Promise<Plan> {
   const list = await getOwnedWishlist(repo, userId, input.params.listId);
   const params: PlanParams = { ...input.params, spotIds: unique(input.params.spotIds) };
+  const allowed = new Set(params.spotIds);
+  const itemSpotIds = input.result.items.flatMap((i) => (i.type === "spot" ? [i.spotId] : []));
+  const skippedSpotIds = input.result.skipped.map((s) => s.spotId);
+  const notAllowed = unique([...itemSpotIds, ...skippedSpotIds].filter((id) => !allowed.has(id)));
+  if (notAllowed.length > 0 || new Set(itemSpotIds).size !== itemSpotIds.length) {
+    throw ApiError.validation(
+      ITEM_NOT_IN_SPOTS_MESSAGE,
+      notAllowed.map((id) => ({ field: "result.items", reason: "not_in_spots", spotId: id })),
+    );
+  }
   const result: PlanResult = {
     items: input.result.items as PlanItem[],
-    skipped: input.result.skipped as PlanResult["skipped"],
+    skipped: input.result.skipped,
     totalTravelMin: input.result.totalTravelMin,
     endAt: input.result.endAt,
-    geometry: (input.result.geometry ?? null) as PlanResult["geometry"],
+    geometry: input.result.geometry ?? null,
     travelMatrixId: input.result.travelMatrixId,
     estimated: input.result.estimated,
   };
-  return repo.plans.create({ userId, wishlistId: list.id, params, result });
+  const coarse = coarsenSavedPlan(params, result);
+  return repo.plans.create({ userId, wishlistId: list.id, params: coarse.params, result: coarse.result });
 }
 
 /** 本人のプランを取得する。無ければ 404、他人のものなら 403 */

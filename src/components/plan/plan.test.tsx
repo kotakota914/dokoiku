@@ -177,6 +177,54 @@ describe("Timeline", () => {
     for (const a of links) expect(a).toHaveAttribute("target", "_blank");
   });
 
+  it("到着直後に昼食が入るときは、昼食行に移動時間を出さず次のスポットの行にまとめる（F-5-8）", () => {
+    // schedule.ts は [S1(travel=18), lunch(travel=0), S2] の形で返す
+    const items: PlanResult["items"] = [
+      {
+        type: "spot",
+        spotId: S1,
+        arrive: "09:25",
+        stayMin: 60,
+        depart: "10:25",
+        travelMinToNext: 18,
+        inBestTime: false,
+      },
+      { type: "lunch", arrive: "10:43", stayMin: 60, depart: "11:43", travelMinToNext: 0 },
+      {
+        type: "spot",
+        spotId: S2,
+        arrive: "11:43",
+        stayMin: 45,
+        depart: "12:28",
+        travelMinToNext: 30,
+        inBestTime: false,
+      },
+    ];
+    render(
+      <Timeline
+        items={items}
+        spotsById={spotsById()}
+        origin={params.origin}
+        destination={{ lat: 35.0, lng: 135.75, label: "ホテル" }}
+        startTime={params.startTime}
+        endAt="12:58"
+        mode="walking"
+      />,
+    );
+    const rows = within(screen.getByRole("list", { name: "訪問順" })).getAllByRole("listitem");
+    expect(rows[0]).toHaveTextContent("移動 約25分");
+    expect(rows[1]).toHaveTextContent("昼食休憩");
+    expect(rows[1]).not.toHaveTextContent("移動");
+    expect(rows[1].querySelector("a")).toBeNull();
+    expect(rows[2]).toHaveTextContent("清水寺");
+    expect(rows[2]).toHaveTextContent("移動 約18分");
+    const links = screen.getAllByRole("link", { name: /Googleマップで経路を開く/ });
+    expect(links).toHaveLength(3);
+    expect(links[1].getAttribute("href")).toContain("origin=34.9671,135.7727&destination=34.9949,135.785");
+    // 最後のスポット → 到着地
+    expect(screen.getByText("移動 約30分")).toBeInTheDocument();
+  });
+
   it("到着地があれば最後の区間のリンクを出す", () => {
     render(
       <Timeline
@@ -218,7 +266,7 @@ describe("PlanResultView", () => {
       ],
     };
     render(wrap(<PlanResultView params={params} result={r} spots={spots} listId={LIST_ID} />));
-    expect(screen.getByText("経路が見つかりませんでした")).toBeInTheDocument();
+    expect(screen.getByText("この区間の経路が見つかりませんでした")).toBeInTheDocument();
     expect(screen.getByText("営業時間外")).toBeInTheDocument();
     expect(screen.getByText("削除されました")).toBeInTheDocument();
     expect(screen.getByText("削除されたスポット")).toBeInTheDocument();
@@ -310,6 +358,21 @@ describe("PlanResultView", () => {
       order: [S1, S2],
       stayOverrides: { [S1]: 90 },
     });
+  });
+
+  it("再計算の結果が終了時刻を超えたら警告を出し、保存できない（F-5-6）", async () => {
+    const over: PlanResult = { ...result, endAt: "18:40", skipped: [] };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(over)),
+    );
+    render(wrap(<PlanResultView params={params} result={result} spots={spots} listId={LIST_ID} />));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "保存" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "伏見稲荷大社を下へ" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("終了時刻 18:00 を超えています（終了 18:40）");
+    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
   });
 
   it("保存で POST /plans を呼び、保存済みページへ移動する（F-5-7）", async () => {

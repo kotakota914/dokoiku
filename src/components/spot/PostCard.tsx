@@ -63,12 +63,13 @@ export function PostCard({ post, currentUserId, showSpotName = false, className 
         <Avatar src={post.author.avatarUrl} name={post.author.displayName} size={40} />
         <div className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-base font-medium text-text">{post.author.displayName}</span>
-          <time dateTime={post.createdAt} className="text-sm text-text-muted">
+          <time dateTime={post.createdAt} className="text-base text-text-muted">
             {formatDateTimeJa(post.createdAt)}
           </time>
         </div>
         {post.status === "hidden" ? (
-          <Badge icon="circle-pause" tone="warning">
+          // 非表示は eye-off（circle-pause は「停止中」専用。docs/decisions.md）
+          <Badge icon="eye-off" tone="warning">
             非表示
           </Badge>
         ) : null}

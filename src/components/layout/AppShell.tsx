@@ -121,7 +121,7 @@ export function AppShell({ user, children, headerRight }: AppShellProps) {
                   href={item.href}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "flex min-h-11 w-full flex-col items-center justify-center gap-0.5 text-xs font-medium",
+                    "flex min-h-11 w-full flex-col items-center justify-center gap-0.5 text-sm font-medium",
                     active ? "text-primary-strong" : "text-text-muted",
                   )}
                 >

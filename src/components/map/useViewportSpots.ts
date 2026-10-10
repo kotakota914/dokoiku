@@ -41,10 +41,15 @@ export interface UseViewportSpotsResult {
 const EMPTY_SPOTS: SpotSummary[] = [];
 const EMPTY_HEAT: HeatPoint[] = [];
 
+/** GET /spots に送る整数ズーム。mapModeForZoom と同じ丸め（四捨五入）にして表示方式を一致させる */
+export function zoomForRequest(zoom: number): number {
+  return Math.round(zoom);
+}
+
 export function buildSpotsPath(viewport: Viewport, categories: readonly Category[]): string {
   const params = new URLSearchParams({
     bbox: bboxToQuery(viewport.bbox),
-    zoom: String(Math.round(viewport.zoom)),
+    zoom: String(zoomForRequest(viewport.zoom)),
   });
   if (categories.length > 0) params.set("category", categories.join(","));
   return `/spots?${params.toString()}`;

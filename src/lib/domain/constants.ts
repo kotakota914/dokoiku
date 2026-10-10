@@ -80,9 +80,14 @@ export const MAP_ZOOM = {
 
 export type MapMode = "heatmap" | "cluster" | "pins";
 
+/**
+ * ズームから表示方式を決める。MapLibre のズームは連続値なので、GET /spots に送る整数ズーム
+ * （useViewportSpots の Math.round）と同じ丸めで判定し、画面とサーバーの方式がずれないようにする。
+ */
 export function mapModeForZoom(zoom: number): MapMode {
-  if (zoom <= MAP_ZOOM.heatmapMax) return "heatmap";
-  if (zoom >= MAP_ZOOM.pinMin) return "pins";
+  const z = Math.round(zoom);
+  if (z <= MAP_ZOOM.heatmapMax) return "heatmap";
+  if (z >= MAP_ZOOM.pinMin) return "pins";
   return "cluster";
 }
 
@@ -152,7 +157,13 @@ export const LIMITS = {
   tmpUploadHours: 24,
 } as const;
 
-export const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/heic", "image/heif", "image/webp"] as const;
+export const ACCEPTED_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/heic",
+  "image/heif",
+  "image/webp",
+] as const;
 
 export const TRAVEL_MODES = ["walking", "driving"] as const;
 export type TravelMode = (typeof TRAVEL_MODES)[number];
@@ -160,12 +171,21 @@ export const TRAVEL_MODE_LABELS: Record<TravelMode, string> = { walking: "徒歩
 
 export const PACES = ["relaxed", "normal", "packed"] as const;
 export type Pace = (typeof PACES)[number];
-export const PACE_LABELS: Record<Pace, string> = { relaxed: "ゆったり", normal: "ふつう", packed: "たくさん回りたい" };
+export const PACE_LABELS: Record<Pace, string> = {
+  relaxed: "ゆったり",
+  normal: "ふつう",
+  packed: "たくさん回りたい",
+};
 /** F-5-1：ペースの倍率 */
 export const PACE_MULTIPLIER: Record<Pace, number> = { relaxed: 1.3, normal: 1.0, packed: 0.8 };
 
 /** F-5-1：重視するもの（カテゴリ「その他」は選べない） */
-export const INTERESTS = ["photogenic", "gourmet", "history", "nature"] as const satisfies readonly Category[];
+export const INTERESTS = [
+  "photogenic",
+  "gourmet",
+  "history",
+  "nature",
+] as const satisfies readonly Category[];
 export type Interest = (typeof INTERESTS)[number];
 /** 11章：重視するカテゴリの滞在時間倍率 */
 export const INTEREST_MULTIPLIER = 1.2;
@@ -208,11 +228,31 @@ export const FEATURE_LABELS: Record<Feature, string> = {
 
 /** 14章：外部サービスの無料枠（数値は 2026/10 時点の想定。公式サイトで確認して更新する） */
 export const USAGE_LIMITS = {
-  ors_directions: { provider: "ors", feature: "route_planning" as Feature, period: "day" as const, limit: 2000 },
+  ors_directions: {
+    provider: "ors",
+    feature: "route_planning" as Feature,
+    period: "day" as const,
+    limit: 2000,
+  },
   ors_matrix: { provider: "ors", feature: "route_planning" as Feature, period: "day" as const, limit: 500 },
-  nominatim: { provider: "nominatim", feature: "external_search" as Feature, period: "day" as const, limit: 500 },
-  supabase_storage: { provider: "supabase_storage", feature: "post_create" as Feature, period: "month" as const, limit: 1024 * 1024 * 1024 },
-  supabase_db: { provider: "supabase_db", feature: "post_create" as Feature, period: "month" as const, limit: 500 * 1024 * 1024 },
+  nominatim: {
+    provider: "nominatim",
+    feature: "external_search" as Feature,
+    period: "day" as const,
+    limit: 500,
+  },
+  supabase_storage: {
+    provider: "supabase_storage",
+    feature: "post_create" as Feature,
+    period: "month" as const,
+    limit: 1024 * 1024 * 1024,
+  },
+  supabase_db: {
+    provider: "supabase_db",
+    feature: "post_create" as Feature,
+    period: "month" as const,
+    limit: 500 * 1024 * 1024,
+  },
 } as const;
 export type UsageKey = keyof typeof USAGE_LIMITS;
 

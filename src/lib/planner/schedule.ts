@@ -1,6 +1,7 @@
 /**
  * 11.5：決まった訪問順について、開始時刻から順に到着・滞在・出発を計算する。
- * - 昼食休憩：11:30〜13:30 の間で最初に空いた時点に 60 分入れる。
+ * - 昼食休憩：11:30〜13:30 の間で最初に空いた時点（出発地・スポット到着時・スポット出発時）に 60 分入れる。
+ *   窓の中に空きが無い（1 つの滞在が窓を跨ぐ）ときは昼食を入れず lunchSkipped=true にする（窓の外には入れない）。
  * - 営業時間（openingHours があるときだけ）：到着が営業時間外なら feasible=false。
  * - 終了時刻超過（到着地があれば到着地への到着、なければ最後の出発）なら feasible=false。
  */
@@ -40,6 +41,8 @@ export interface ScheduleResult {
   infeasibleReason?: SkipReason;
   /** infeasibleReason が no_route / opening_hours のとき、そのスポット */
   infeasibleSpotId?: string;
+  /** 昼食休憩を希望したが、11:30〜13:30 の間に空きが無く入れられなかった */
+  lunchSkipped: boolean;
 }
 
 /** 秒を分に切り上げる（移動時間を過小に見積もらない） */
@@ -68,6 +71,23 @@ export function isOpenAt(spot: Pick<PlannerSpot, "openingHours">, date: string, 
   const close = hhmmToMinutes(entry.close);
   const t = arriveMin % 1440;
   return t >= open && t < close;
+}
+
+/**
+ * 昼食休憩を希望したのに窓（11:30〜13:30）に空きが無く入れられなかったか。
+ * 画面（PlanResultView）でも同じ判定を使う（PlanResult には項目を増やさない）。
+ * - 昼食の項目があれば false
+ * - 窓の終わりより後に始まる日、または最後の出発が窓の開始より前（昼食の前に終わる日）なら false
+ */
+export function isLunchSkipped(lunchBreak: boolean, startMin: number, items: readonly PlanItem[]): boolean {
+  if (!lunchBreak) return false;
+  if (items.some((i) => i.type === "lunch")) return false;
+  const lunchStart = hhmmToMinutes(PLAN_DEFAULTS.lunchWindowStart);
+  const lunchEnd = hhmmToMinutes(PLAN_DEFAULTS.lunchWindowEnd);
+  if (startMin > lunchEnd) return false;
+  const last = items[items.length - 1];
+  const lastDepart = last ? hhmmToMinutes(last.depart) : startMin;
+  return lastDepart > lunchStart;
 }
 
 export function buildSchedule(order: readonly PlannerSpot[], opts: ScheduleOptions): ScheduleResult {
@@ -103,7 +123,13 @@ export function buildSchedule(order: readonly PlannerSpot[], opts: ScheduleOptio
   };
 
   const pushLunch = (arrive: number) => {
-    items.push({ type: "lunch", arrive: minutesToHHMM(arrive), stayMin: lunchMin, depart: minutesToHHMM(arrive + lunchMin), travelMinToNext: null });
+    items.push({
+      type: "lunch",
+      arrive: minutesToHHMM(arrive),
+      stayMin: lunchMin,
+      depart: minutesToHHMM(arrive + lunchMin),
+      travelMinToNext: null,
+    });
     lunchPending = false;
     return arrive + lunchMin;
   };
@@ -155,8 +181,9 @@ export function buildSchedule(order: readonly PlannerSpot[], opts: ScheduleOptio
     t = depart;
     prevKey = key;
 
-    // 出発時刻が窓の開始以降なら、その直後に昼食（窓を過ぎていても最初の出発直後に入れる）
-    if (lunchPending && t >= lunchStart) {
+    // 出発時刻が窓の中なら、その直後に昼食。窓の前に到着して窓の終わりを過ぎるまで滞在した（空きが無い）
+    // ときは、窓を過ぎてから入れずに lunchSkipped にする（F-5-1）
+    if (lunchPending && t >= lunchStart && t <= lunchEnd) {
       setTravelToNext(0);
       t = pushLunch(t);
     }
@@ -177,5 +204,14 @@ export function buildSchedule(order: readonly PlannerSpot[], opts: ScheduleOptio
   }
   if (endMin > opts.endMin) markInfeasible("time_limit");
 
-  return { items, endMin, totalTravelMin, feasible, offBestMinutes, infeasibleReason, infeasibleSpotId };
+  return {
+    items,
+    endMin,
+    totalTravelMin,
+    feasible,
+    offBestMinutes,
+    infeasibleReason,
+    infeasibleSpotId,
+    lunchSkipped: isLunchSkipped(opts.lunchBreak, opts.startMin, items),
+  };
 }

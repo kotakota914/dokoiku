@@ -76,7 +76,7 @@ export function PhotoGallery({ photos, spotName, category, className }: PhotoGal
               <div className="flex items-center justify-between">
                 <IconButton
                   icon="chevron-left"
-                  iconSize={24}
+                  iconSize={20}
                   variant="secondary"
                   aria-label="前の写真"
                   disabled={index === 0}
@@ -84,7 +84,7 @@ export function PhotoGallery({ photos, spotName, category, className }: PhotoGal
                 />
                 <IconButton
                   icon="chevron-right"
-                  iconSize={24}
+                  iconSize={20}
                   variant="secondary"
                   aria-label="次の写真"
                   disabled={index === photos.length - 1}

@@ -85,7 +85,11 @@ function toLocations(points: readonly LatLng[]): [number, number][] {
 }
 
 /** 全地点間の移動時間（秒）と距離（m）の行列。1 回の呼び出しで全ペアを取る */
-export async function fetchMatrix(points: readonly LatLng[], mode: TravelMode, opts: OrsOptions = {}): Promise<OrsMatrixResult> {
+export async function fetchMatrix(
+  points: readonly LatLng[],
+  mode: TravelMode,
+  opts: OrsOptions = {},
+): Promise<OrsMatrixResult> {
   if (points.length < 2) return { durations: points.map(() => [0]), distances: points.map(() => [0]) };
   const data = await postJson<Partial<OrsMatrixResult>>(
     `/v2/matrix/${ORS_PROFILE[mode]}`,
@@ -103,7 +107,11 @@ interface GeoJsonLineFeatureCollection {
 }
 
 /** 地点を順にたどる経路形状（LineString の座標 [lng, lat]） */
-export async function fetchDirections(points: readonly LatLng[], mode: TravelMode, opts: OrsOptions = {}): Promise<[number, number][]> {
+export async function fetchDirections(
+  points: readonly LatLng[],
+  mode: TravelMode,
+  opts: OrsOptions = {},
+): Promise<[number, number][]> {
   if (points.length < 2) return toLocations(points);
   const data = await postJson<GeoJsonLineFeatureCollection>(
     `/v2/directions/${ORS_PROFILE[mode]}/geojson`,

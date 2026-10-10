@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 const { ApiError } = await import("@/lib/api/errors");
-const { USAGE_LIMITS } = await import("@/lib/domain/constants");
+const { LIMITS, USAGE_LIMITS } = await import("@/lib/domain/constants");
 const { createMemoryRepository, SEED_USER_IDS } = await import("@/lib/repo/memory");
 const { periodKey } = await import("@/lib/utils/time");
 const { requestUploads } = await import("./uploads");
@@ -25,6 +25,26 @@ describe("requestUploads", () => {
     expect(uploads.map((u) => u.kind)).toEqual(["full", "thumb"]);
     expect(uploads.every((u) => u.path.startsWith(`posts/tmp/${me}/`))).toBe(true);
     expect(uploads.every((u) => typeof u.signedUrl === "string" && u.signedUrl.length > 0)).toBe(true);
+  });
+
+  it("変換後サイズが 2MB を超える申告は 413 PAYLOAD_TOO_LARGE（9.1）", async () => {
+    const repo = createMemoryRepository(true, { persist: false });
+    const createSignedUploads = vi.spyOn(repo.storage, "createSignedUploads");
+    const err = await requestUploads(repo, SEED_USER_IDS.userA, {
+      files: [
+        { kind: "full", contentType: "image/webp", size: LIMITS.convertedImageMaxBytes },
+        { kind: "thumb", contentType: "image/webp", size: LIMITS.convertedImageMaxBytes + 1 },
+      ],
+    }).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ status: 413, code: "PAYLOAD_TOO_LARGE" });
+    expect((err as InstanceType<typeof ApiError>).details).toEqual([
+      { field: "files.1.size", reason: "max_size" },
+    ]);
+    expect(createSignedUploads).not.toHaveBeenCalled();
   });
 
   it("停止中（post_create）は 503", async () => {

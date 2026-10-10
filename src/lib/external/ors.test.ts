@@ -50,12 +50,17 @@ describe("fetchMatrix", () => {
 
   it("HTTP エラーは UPSTREAM_ERROR", async () => {
     const fetchImpl = vi.fn<FetchLike>(async () => jsonResponse({ error: "rate limited" }, 429));
-    await expect(fetchMatrix(P, "walking", { fetchImpl, apiKey: "k" })).rejects.toMatchObject({ code: "UPSTREAM_ERROR", status: 502 });
+    await expect(fetchMatrix(P, "walking", { fetchImpl, apiKey: "k" })).rejects.toMatchObject({
+      code: "UPSTREAM_ERROR",
+      status: 502,
+    });
   });
 
   it("キー未設定は UPSTREAM_ERROR", async () => {
     const fetchImpl = vi.fn<FetchLike>();
-    await expect(fetchMatrix(P, "walking", { fetchImpl, apiKey: "" })).rejects.toMatchObject({ code: "UPSTREAM_ERROR" });
+    await expect(fetchMatrix(P, "walking", { fetchImpl, apiKey: "" })).rejects.toMatchObject({
+      code: "UPSTREAM_ERROR",
+    });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
@@ -65,12 +70,26 @@ describe("fetchDirections", () => {
     const fetchImpl = vi.fn<FetchLike>(async () =>
       jsonResponse({
         type: "FeatureCollection",
-        features: [{ type: "Feature", geometry: { type: "LineString", coordinates: [[135.7588, 34.9858], [135.77, 34.99], [135.785, 34.9948]] } }],
+        features: [
+          {
+            type: "Feature",
+            geometry: {
+              type: "LineString",
+              coordinates: [
+                [135.7588, 34.9858],
+                [135.77, 34.99],
+                [135.785, 34.9948],
+              ],
+            },
+          },
+        ],
       }),
     );
     const coords = await fetchDirections(P, "walking", { fetchImpl, apiKey: "k" });
     expect(coords).toHaveLength(3);
-    expect(fetchImpl.mock.calls[0][0]).toBe("https://api.openrouteservice.org/v2/directions/foot-walking/geojson");
+    expect(fetchImpl.mock.calls[0][0]).toBe(
+      "https://api.openrouteservice.org/v2/directions/foot-walking/geojson",
+    );
     const body = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body));
     expect(body.coordinates).toEqual([
       [135.7588, 34.9858],
@@ -80,7 +99,9 @@ describe("fetchDirections", () => {
 
   it("応答が不正なら UPSTREAM_ERROR", async () => {
     const fetchImpl = vi.fn<FetchLike>(async () => jsonResponse({ features: [] }));
-    await expect(fetchDirections(P, "walking", { fetchImpl, apiKey: "k" })).rejects.toMatchObject({ code: "UPSTREAM_ERROR" });
+    await expect(fetchDirections(P, "walking", { fetchImpl, apiKey: "k" })).rejects.toMatchObject({
+      code: "UPSTREAM_ERROR",
+    });
   });
 });
 
@@ -96,6 +117,12 @@ describe("fallback", () => {
     expect(estimateTravel(P[0], P[0], "walking")).toEqual({ durationSec: 0, distanceM: 0 });
   });
   it("straightLine は [lng, lat] の LineString", () => {
-    expect(straightLine(P)).toEqual({ type: "LineString", coordinates: [[135.7588, 34.9858], [135.785, 34.9948]] });
+    expect(straightLine(P)).toEqual({
+      type: "LineString",
+      coordinates: [
+        [135.7588, 34.9858],
+        [135.785, 34.9948],
+      ],
+    });
   });
 });

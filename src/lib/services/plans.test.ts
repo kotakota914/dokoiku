@@ -21,7 +21,17 @@ import {
   type PlanComputeInput,
 } from "@/lib/validation/schemas";
 import { addWishlistItem, createWishlist, getOwnedWishlist, setWishlistItemMustVisit } from "./lists";
-import { computePlan, deletePlan, getPlan, recomputePlan, savePlan, SPOT_NOT_IN_LIST_MESSAGE } from "./plans";
+import {
+  coarsenSavedPlan,
+  computePlan,
+  deletePlan,
+  getPlan,
+  ITEM_NOT_IN_SPOTS_MESSAGE,
+  recomputePlan,
+  roundCoordinate,
+  savePlan,
+  SPOT_NOT_IN_LIST_MESSAGE,
+} from "./plans";
 
 vi.mock("server-only", () => ({}));
 
@@ -461,8 +471,12 @@ describe("savePlan / getPlan / deletePlan（F-5-7）", () => {
       spotCount: 3,
       totalTravelMin: result.totalTravelMin,
     });
-    expect(plan.params).toEqual(p);
-    expect(plan.result).toEqual(result);
+    // 出発地・到着地の座標は約 100m（小数 3 桁）に丸めて保存する（現在地を保存しない）
+    const saved = coarsenSavedPlan(p, result);
+    expect(plan.params).toEqual(saved.params);
+    expect(plan.params.origin).toEqual({ ...KYOTO_STATION, lat: 34.986, lng: 135.759 });
+    expect(plan.result).toEqual(saved.result);
+    expect(plan.result.items).toEqual(result.items);
 
     const detail = await getOwnedWishlist(repo, USER_A, listId);
     expect(detail.plans.map((s) => s.id)).toEqual([plan.id]);
@@ -478,6 +492,38 @@ describe("savePlan / getPlan / deletePlan（F-5-7）", () => {
     expect((await getOwnedWishlist(repo, USER_A, listId)).plans).toEqual([]);
   });
 
+  it("出発地・到着地（現在地）の座標は小数 3 桁に丸めて保存し、経路形状の両端も同じ精度にする（13章）", async () => {
+    const listId = await listWith(USER_A, SPOTS);
+    const origin = { lat: 34.98576543, lng: 135.75881234, label: "現在地" };
+    const destination = { lat: 35.01234567, lng: 135.76812345, label: "現在地" };
+    const p = params(listId, { origin, destination });
+    const result = await computePlan(repo, USER_A, p, FALLBACK);
+    // 直線の経路形状は出発地・到着地そのもので始まり終わる
+    expect(result.geometry?.coordinates[0]).toEqual([origin.lng, origin.lat]);
+    expect(result.geometry?.coordinates.at(-1)).toEqual([destination.lng, destination.lat]);
+
+    const plan = await savePlan(repo, USER_A, planSaveSchema.parse({ params: p, result }));
+    expect(plan.params.origin).toEqual({ lat: 34.986, lng: 135.759, label: "現在地" });
+    expect(plan.params.destination).toEqual({ lat: 35.012, lng: 135.768, label: "現在地" });
+    expect(roundCoordinate(34.98576543)).toBe(34.986);
+    const coords = plan.result.geometry!.coordinates;
+    expect(coords[0]).toEqual([135.759, 34.986]);
+    expect(coords.at(-1)).toEqual([135.768, 35.012]);
+    // 途中の点（スポットの座標）はそのまま
+    expect(coords.slice(1, -1)).toEqual(result.geometry!.coordinates.slice(1, -1));
+    expect(coords).toHaveLength(result.geometry!.coordinates.length);
+    expect(plan.result.items).toEqual(result.items);
+    expect((await getPlan(repo, USER_A, plan.id)).params.origin.lat).toBe(34.986);
+
+    // 到着地が無ければ末尾（最後のスポット）は丸めない
+    const p2 = params(listId, { origin, destination: null });
+    const r2 = await computePlan(repo, USER_A, p2, FALLBACK);
+    const plan2 = await savePlan(repo, USER_A, planSaveSchema.parse({ params: p2, result: r2 }));
+    expect(plan2.params.destination).toBeNull();
+    expect(plan2.result.geometry!.coordinates.at(-1)).toEqual(r2.geometry!.coordinates.at(-1));
+    expect(plan2.result.geometry!.coordinates[0]).toEqual([135.759, 34.986]);
+  });
+
   it("他人のリストへの保存は 403、存在しないリストは 404", async () => {
     const listId = await listWith(USER_A, SPOTS);
     const p = params(listId);
@@ -485,5 +531,75 @@ describe("savePlan / getPlan / deletePlan（F-5-7）", () => {
     await expectApiError(savePlan(repo, USER_B, planSaveSchema.parse({ params: p, result })), 403);
     const missing = params("b0000000-0000-4000-8000-ffffffffffff");
     await expectApiError(savePlan(repo, USER_A, planSaveSchema.parse({ params: missing, result })), 404);
+  });
+
+  it("保存する result はサーバーで検証する：形の崩れた items・不明な reason・巨大な geometry は 400", async () => {
+    const listId = await listWith(USER_A, SPOTS);
+    const p = params(listId);
+    const result = await computePlan(repo, USER_A, p, FALLBACK);
+    expect(planSaveSchema.safeParse({ params: p, result }).success).toBe(true);
+
+    const brokenItem = { ...result, items: [{ type: "spot", spotId: SPOTS[0], arrive: "09:00" }] };
+    expect(planSaveSchema.safeParse({ params: p, result: brokenItem }).success).toBe(false);
+    const badReason = { ...result, skipped: [{ spotId: SPOTS[0], reason: "hacked" }] };
+    expect(planSaveSchema.safeParse({ params: p, result: badReason }).success).toBe(false);
+    const hugeGeometry = {
+      ...result,
+      geometry: { type: "LineString", coordinates: Array.from({ length: 5001 }, () => [135.7, 35.0]) },
+    };
+    expect(planSaveSchema.safeParse({ params: p, result: hugeGeometry }).success).toBe(false);
+    const badCoordinate = { ...result, geometry: { type: "LineString", coordinates: [[200, 35.0]] } };
+    expect(planSaveSchema.safeParse({ params: p, result: badCoordinate }).success).toBe(false);
+    const tooMany = {
+      ...result,
+      items: Array.from({ length: 12 }, () => ({
+        type: "lunch",
+        arrive: "12:00",
+        stayMin: 60,
+        depart: "13:00",
+        travelMinToNext: 0,
+      })),
+    };
+    expect(planSaveSchema.safeParse({ params: p, result: tooMany }).success).toBe(false);
+  });
+
+  it("items / skipped の spotId が params.spotIds に無い、または同じスポットが 2 回あれば 400", async () => {
+    const listId = await listWith(USER_A, SPOTS);
+    const p = params(listId);
+    const result = await computePlan(repo, USER_A, p, FALLBACK);
+    const foreign = "b0000000-0000-4000-8000-ffffffffffff";
+    const items = result.items.map((i, idx) =>
+      idx === 0 && i.type === "spot" ? { ...i, spotId: foreign } : i,
+    );
+    const err = await expectApiError(
+      savePlan(repo, USER_A, planSaveSchema.parse({ params: p, result: { ...result, items } })),
+      400,
+      ITEM_NOT_IN_SPOTS_MESSAGE,
+    );
+    expect(err.details).toEqual([{ field: "result.items", reason: "not_in_spots", spotId: foreign }]);
+    await expectApiError(
+      savePlan(
+        repo,
+        USER_A,
+        planSaveSchema.parse({
+          params: p,
+          result: { ...result, skipped: [{ spotId: foreign, reason: "deleted" }] },
+        }),
+      ),
+      400,
+    );
+    const duplicated = [...result.items, result.items[0]];
+    await expectApiError(
+      savePlan(repo, USER_A, planSaveSchema.parse({ params: p, result: { ...result, items: duplicated } })),
+      400,
+    );
+  });
+
+  it("date は実在する日付だけ受け付ける（2026-13-45 や 2026-02-30 は 400）", () => {
+    const listId = "b0000000-0000-4000-8000-0000000000aa";
+    for (const date of ["2026-13-45", "2026-02-30", "2025-02-29", "2026-11-31", "2026-1-1"]) {
+      expect(planComputeSchema.safeParse({ ...params(listId), date }).success).toBe(false);
+    }
+    expect(planComputeSchema.safeParse({ ...params(listId), date: "2024-02-29" }).success).toBe(true);
   });
 });

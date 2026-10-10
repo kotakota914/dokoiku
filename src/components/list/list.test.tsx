@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /**
  * S-06/S-07 部品の単体テスト（fetch をモック）：
- * - ListPicker：GET /lists → 一覧表示、POST /items の 409 で「追加済みです」
+ * - ListPicker：GET /lists → 一覧表示、POST /items の 409（追加済み）で「追加済みです」、
+ *   上限の 409 は API の文言、満杯のリストは選べない、成功時は「リストを見る」の導線
  * - ListItemRow：star トグルが PATCH /lists/{id}/items/{spotId} { mustVisit } を呼ぶ
  * - shareUrl：token / url からの共有 URL 組み立て
  */
@@ -11,7 +12,9 @@ import type { ReactNode } from "react";
 import type { Wishlist, WishlistItem } from "@/lib/domain/types";
 import { ToastProvider } from "@/components/ui/Toast";
 import { ListItemRow } from "./ListItemRow";
-import { ListPicker, normalizeLists } from "./ListPicker";
+import { LIMITS } from "@/lib/domain/constants";
+import { ListPicker, isAlreadyAddedError, normalizeLists } from "./ListPicker";
+import { ApiClientError } from "@/lib/api/client";
 import { buildShareUrl, shareTokenOf } from "./shareUrl";
 
 const push = vi.fn();
@@ -92,9 +95,7 @@ describe("ListPicker", () => {
   it("開くと GET /api/v1/lists を呼び、409 なら「追加済みです」を出す", async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse([list]))
-      .mockResolvedValueOnce(
-        jsonResponse({ error: { code: "CONFLICT", message: "既に追加されています" } }, 409),
-      );
+      .mockResolvedValueOnce(jsonResponse({ error: { code: "CONFLICT", message: "追加済みです" } }, 409));
     const onClose = vi.fn();
     const onAdded = vi.fn();
     render(wrap(<ListPicker spotId={item.spotId} open onClose={onClose} onAdded={onAdded} />));
@@ -115,7 +116,7 @@ describe("ListPicker", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("追加に成功したら「<リスト名>に追加しました」を出し onAdded を呼ぶ", async () => {
+  it("追加に成功したら「<リスト名>に追加しました」と「リストを見る」の導線を出し onAdded を呼ぶ", async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse([list]))
       .mockResolvedValueOnce(jsonResponse({ spotId: item.spotId, mustVisit: false }, 201));
@@ -123,7 +124,43 @@ describe("ListPicker", () => {
     render(wrap(<ListPicker spotId={item.spotId} open onClose={() => {}} onAdded={onAdded} />));
     fireEvent.click(await screen.findByRole("button", { name: /京都旅行/ }));
     expect(await screen.findByText("京都旅行に追加しました")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /リストを見る/ })).toHaveAttribute("href", `/lists/${list.id}`);
     expect(onAdded).toHaveBeenCalledWith(list);
+  });
+
+  it("上限超過の 409 は「追加済みです」ではなく API の文言をエラーとして出す（F-4-2）", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([{ ...list, itemCount: 29 }]))
+      .mockResolvedValueOnce(
+        jsonResponse({ error: { code: "CONFLICT", message: "リストは30か所までです" } }, 409),
+      );
+    const onClose = vi.fn();
+    render(wrap(<ListPicker spotId={item.spotId} open onClose={onClose} />));
+    fireEvent.click(await screen.findByRole("button", { name: /京都旅行/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("リストは30か所までです");
+    expect(screen.queryByText("追加済みです")).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("上限に達したリストは「上限」バッジ付きで選べない", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([{ ...list, itemCount: LIMITS.itemsPerList }]));
+    render(wrap(<ListPicker spotId={item.spotId} open onClose={() => {}} />));
+    const row = await screen.findByRole("button", { name: /京都旅行/ });
+    expect(row).toBeDisabled();
+    expect(row).toHaveTextContent("上限");
+    expect(row).toHaveTextContent("30/30");
+    expect(screen.getByText(/リストは30か所までです/)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("isAlreadyAddedError は文言が「追加済みです」の CONFLICT だけ true", () => {
+    expect(isAlreadyAddedError(new ApiClientError(409, { code: "CONFLICT", message: "追加済みです" }))).toBe(
+      true,
+    );
+    expect(
+      isAlreadyAddedError(new ApiClientError(409, { code: "CONFLICT", message: "リストは30か所までです" })),
+    ).toBe(false);
+    expect(isAlreadyAddedError(new Error("追加済みです"))).toBe(false);
   });
 
   it("未ログイン（401）ならログイン画面へ移動する", async () => {

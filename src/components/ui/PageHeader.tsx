@@ -11,6 +11,11 @@ export interface PageHeaderProps {
   title: ReactNode;
   /** 戻る先。指定が無ければ履歴を戻る */
   backHref?: string;
+  /**
+   * 履歴があれば戻り（直前の画面の URL ハッシュ＝地図の位置をそのまま復帰できる）、
+   * 直接開いたなど履歴が無いときはこの URL へ移動する（ADR-0017）
+   */
+  backFallbackHref?: string;
   onBack?: () => void;
   hideBack?: boolean;
   /** 右側のアクション（IconButton など） */
@@ -20,10 +25,11 @@ export interface PageHeaderProps {
   className?: string;
 }
 
-/** 画面上部の見出し：戻る（chevron-left）＋タイトル＋右側のアクション */
+/** 画面上部の見出し：戻る（chevron-left、ボタン内なので 20px）＋タイトル＋右側のアクション */
 export function PageHeader({
   title,
   backHref,
+  backFallbackHref,
   onBack,
   hideBack = false,
   actions,
@@ -31,6 +37,17 @@ export function PageHeader({
   className,
 }: PageHeaderProps) {
   const router = useRouter();
+  function goBack() {
+    if (onBack) {
+      onBack();
+      return;
+    }
+    if (backFallbackHref !== undefined && (typeof window === "undefined" || window.history.length <= 1)) {
+      router.push(backFallbackHref);
+      return;
+    }
+    router.back();
+  }
   const back = (
     <>
       {hideBack ? null : backHref ? (
@@ -39,15 +56,10 @@ export function PageHeader({
           aria-label="戻る"
           className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full text-text hover:bg-surface-muted"
         >
-          <Icon name="chevron-left" size={24} />
+          <Icon name="chevron-left" size={20} />
         </Link>
       ) : (
-        <IconButton
-          icon="chevron-left"
-          iconSize={24}
-          aria-label="戻る"
-          onClick={onBack ?? (() => router.back())}
-        />
+        <IconButton icon="chevron-left" iconSize={20} aria-label="戻る" onClick={goBack} />
       )}
     </>
   );

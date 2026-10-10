@@ -56,7 +56,8 @@ export default async function SpotDetailPage({ params }: Props) {
 
   return (
     <div className="flex flex-1 flex-col bg-surface lg:bg-background">
-      <PageHeader title={spot.name} backHref="/" className="lg:top-[var(--header-height)]" />
+      {/* 戻る：履歴があれば戻る（地図の位置は URL ハッシュで復帰。ADR-0017）、無ければ地図へ */}
+      <PageHeader title={spot.name} backFallbackHref="/" className="lg:top-[var(--header-height)]" />
       <div className="mx-auto flex w-full max-w-[960px] flex-col gap-6 pb-8 lg:px-6 lg:pt-6">
         <section aria-label="写真" className="lg:rounded-card lg:border lg:border-border lg:bg-surface">
           <PhotoGallery photos={photos} spotName={spot.name} category={spot.category} />
@@ -81,21 +82,21 @@ export default async function SpotDetailPage({ params }: Props) {
 
           <dl className="grid grid-cols-3 gap-2 rounded-card border border-border bg-surface-muted p-3 text-center">
             <div className="flex flex-col">
-              <dt className="text-sm text-text-muted">投稿数</dt>
+              <dt className="text-base text-text-muted">投稿数</dt>
               <dd className="inline-flex items-center justify-center gap-1 text-lg font-semibold text-text">
                 <Icon name="camera" size={16} />
                 {spot.postCount}
               </dd>
             </div>
             <div className="flex flex-col">
-              <dt className="text-sm text-text-muted">いいね合計</dt>
+              <dt className="text-base text-text-muted">いいね合計</dt>
               <dd className="inline-flex items-center justify-center gap-1 text-lg font-semibold text-text">
                 <Icon name="heart" size={16} />
                 {spot.likeCount}
               </dd>
             </div>
             <div className="flex flex-col">
-              <dt className="text-sm text-text-muted">平均的な滞在時間</dt>
+              <dt className="text-base text-text-muted">平均的な滞在時間</dt>
               <dd className="text-lg font-semibold text-text">
                 <StayDurationLabel
                   minutes={spot.stayMinutesMedian}

@@ -239,7 +239,7 @@ export function StepLocation({
         <Card tone="primary" className="flex items-start gap-2" aria-live="polite">
           <Icon name="map-pin" size={20} className="mt-0.5 text-primary-strong" />
           <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <p className="text-sm text-text-muted">選択中の場所</p>
+            <p className="text-base text-text-muted">選択中の場所</p>
             <p className="break-words text-base font-medium text-text">
               {value.newSpot ? value.newSpot.name : value.spotName}
             </p>
@@ -573,9 +573,9 @@ function CandidateButton({ selected, onClick, name, meta, thumbUrl, category, ba
       ) : null}
       <span className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="break-words text-base font-medium text-text">{name}</span>
-        {meta ? <span className="text-sm text-text-muted">{meta}</span> : null}
+        {meta ? <span className="text-base text-text-muted">{meta}</span> : null}
         {category ? (
-          <span className="text-sm text-text-muted">
+          <span className="text-base text-text-muted">
             <CategoryLabel category={category} />
           </span>
         ) : null}

@@ -12,9 +12,17 @@ export type NotifyLevel = "info" | "warn" | "error";
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
-const PREFIX: Record<NotifyLevel, string> = { info: "[dokoiko]", warn: "[dokoiko][warn]", error: "[dokoiko][error]" };
+const PREFIX: Record<NotifyLevel, string> = {
+  info: "[dokoiko]",
+  warn: "[dokoiko][warn]",
+  error: "[dokoiko][error]",
+};
 
-export async function notify(message: string, level: NotifyLevel = "info", fetchImpl: FetchLike = fetch): Promise<void> {
+export async function notify(
+  message: string,
+  level: NotifyLevel = "info",
+  fetchImpl: FetchLike = fetch,
+): Promise<void> {
   const text = `${PREFIX[level]} ${message}`.slice(0, 2000);
   const logger = level === "error" ? console.error : level === "warn" ? console.warn : console.log;
   logger(text);

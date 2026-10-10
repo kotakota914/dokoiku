@@ -2,7 +2,6 @@
 
 import {
   useCallback,
-  useEffect,
   useId,
   useRef,
   useState,
@@ -10,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { IconButton } from "./IconButton";
-import { useEscapeKey, useIsDesktop, useLockBodyScroll } from "./useLockBodyScroll";
+import { useEscapeKey, useFocusTrap, useIsDesktop, useLockBodyScroll } from "./useLockBodyScroll";
 import { cn } from "./cn";
 
 export type SheetSnap = "peek" | "full";
@@ -79,10 +78,9 @@ export function BottomSheet({
   useLockBodyScroll(modal);
   useEscapeKey(open, onClose);
 
+  // モーダル（全画面・ダイアログ）のときだけフォーカスを閉じ込め、閉じたら元の要素へ戻す
   const panelRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (open && modal) panelRef.current?.focus();
-  }, [open, modal]);
+  useFocusTrap(open && modal, panelRef);
 
   // ドラッグハンドル：上に動かせば full、下に動かせば peek → 閉じる
   const dragStartY = useRef<number | null>(null);

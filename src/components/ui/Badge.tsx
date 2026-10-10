@@ -24,7 +24,7 @@ export function Badge({ icon, tone = "default", children, className }: BadgeProp
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-sm font-medium leading-5",
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-base font-medium leading-6",
         TONE[tone],
         className,
       )}

@@ -12,7 +12,11 @@ import type { LatLng, TravelTimeEntry } from "@/lib/domain/types";
 import type { ApiUsageRepo, TravelCacheRepo } from "@/lib/repo/types";
 import type { TravelMatrix } from "@/lib/planner/types";
 import { estimateTravel, straightLine } from "./fallback";
-import { fetchDirections as defaultFetchDirections, fetchMatrix as defaultFetchMatrix, type OrsMatrixResult } from "./ors";
+import {
+  fetchDirections as defaultFetchDirections,
+  fetchMatrix as defaultFetchMatrix,
+  type OrsMatrixResult,
+} from "./ors";
 import { checkAndCount, type UsageDeps } from "./usage";
 
 export interface TravelPoint extends LatLng {
@@ -64,7 +68,8 @@ function uniquePoints(points: readonly TravelPoint[]): TravelPoint[] {
 
 function allPairs(points: readonly TravelPoint[]): { fromKey: string; toKey: string }[] {
   const pairs: { fromKey: string; toKey: string }[] = [];
-  for (const a of points) for (const b of points) if (a.key !== b.key) pairs.push({ fromKey: a.key, toKey: b.key });
+  for (const a of points)
+    for (const b of points) if (a.key !== b.key) pairs.push({ fromKey: a.key, toKey: b.key });
   return pairs;
 }
 
@@ -96,7 +101,9 @@ export async function getTravelMatrix(
   if (!routingEnabled(deps)) {
     // 概算：全ペアを直線距離から計算し、キャッシュには入れない
     const estimated: TravelMatrix = new Map();
-    for (const a of pts) for (const b of pts) if (a.key !== b.key) estimated.set(`${a.key}|${b.key}`, estimateTravel(a, b, mode));
+    for (const a of pts)
+      for (const b of pts)
+        if (a.key !== b.key) estimated.set(`${a.key}|${b.key}`, estimateTravel(a, b, mode));
     return { matrix: estimated, travelMatrixId, estimated: true };
   }
 
@@ -112,7 +119,8 @@ export async function getTravelMatrix(
       const durationSec = result.durations[i]?.[j];
       const distanceM = result.distances[i]?.[j];
       // 到達不能（null）はキャッシュにも行列にも入れない → planner 側で no_route になる
-      if (typeof durationSec !== "number" || typeof distanceM !== "number" || !Number.isFinite(durationSec)) continue;
+      if (typeof durationSec !== "number" || typeof distanceM !== "number" || !Number.isFinite(durationSec))
+        continue;
       const leg = { durationSec: Math.round(durationSec), distanceM: Math.round(distanceM) };
       fresh.set(`${pts[i].key}|${pts[j].key}`, leg);
       entries.push({ fromKey: pts[i].key, toKey: pts[j].key, mode, ...leg });
@@ -149,7 +157,10 @@ export async function getRouteGeometry(
     return { geometry: { type: "LineString", coordinates }, estimated: false };
   } catch (err) {
     if (err instanceof ApiError && err.code === "FEATURE_SUSPENDED") throw err;
-    console.error("[travel] directions failed, falling back to straight line", err instanceof Error ? err.message : err);
+    console.error(
+      "[travel] directions failed, falling back to straight line",
+      err instanceof Error ? err.message : err,
+    );
     return { geometry: straightLine(orderedPoints), estimated: true };
   }
 }

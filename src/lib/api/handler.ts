@@ -1,7 +1,24 @@
 import "server-only";
 import { NextResponse, type NextRequest } from "next/server";
-import { ZodError, type ZodType } from "zod";
+import { ZodError, type ZodType, type z } from "zod";
 import { ApiError } from "./errors";
+
+/**
+ * zod の issue.code を 9.1 の details[].reason（業務的な理由名）へ対応付ける。
+ * too_big → max_length、too_small → min_length、値が無い invalid_type → required、それ以外 → invalid
+ */
+export function zodIssueReason(issue: z.core.$ZodIssue): string {
+  switch (issue.code) {
+    case "too_big":
+      return "max_length";
+    case "too_small":
+      return "min_length";
+    case "invalid_type":
+      return issue.message.endsWith("received undefined") ? "required" : "invalid";
+    default:
+      return "invalid";
+  }
+}
 
 type Ctx<P> = { params: Promise<P> };
 type Handler<P> = (req: NextRequest, ctx: Ctx<P>) => Promise<Response> | Response;
@@ -31,9 +48,16 @@ export function errorToResponse(err: unknown): Response {
     return NextResponse.json(err.toBody(), { status: err.status });
   }
   if (err instanceof ZodError) {
-    const details = err.issues.map((i) => ({ field: i.path.join("."), reason: i.code, message: i.message }));
+    const details = err.issues.map((i) => ({
+      field: i.path.join("."),
+      reason: zodIssueReason(i),
+      message: i.message,
+    }));
     const first = err.issues[0]?.message ?? "入力値が正しくありません";
-    return NextResponse.json({ error: { code: "VALIDATION_ERROR", message: first, details } }, { status: 400 });
+    return NextResponse.json(
+      { error: { code: "VALIDATION_ERROR", message: first, details } },
+      { status: 400 },
+    );
   }
   console.error("[api] unhandled error", err);
   return NextResponse.json(

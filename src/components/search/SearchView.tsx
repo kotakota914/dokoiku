@@ -289,7 +289,10 @@ interface SpotResultCardProps {
   onSelect: () => void;
 }
 
-/** 結果リストの 1 件：サムネイル・名前・住所・投稿数・人気度・詳細リンク */
+/**
+ * 結果リストの 1 件：サムネイル・名前・住所・投稿数・人気度・詳細リンク。
+ * カードのクリックで地図のピンを選べるが、キーボード・スクリーンリーダー向けに「地図で表示」ボタンも置く。
+ */
 function SpotResultCard({ spot, selected, onSelect }: SpotResultCardProps) {
   const address = [spot.prefecture, spot.city].filter(Boolean).join("");
   return (
@@ -310,12 +313,12 @@ function SpotResultCard({ spot, selected, onSelect }: SpotResultCardProps) {
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <h2 className="truncate text-base font-semibold text-text">{spot.name}</h2>
         {address ? (
-          <p className="flex items-center gap-1 truncate text-sm text-text-muted">
+          <p className="flex items-center gap-1 truncate text-base text-text-muted">
             <Icon name="map-pin" size={16} />
             <span className="truncate">{address}</span>
           </p>
         ) : null}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-text-muted">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base text-text-muted">
           <CategoryLabel category={spot.category} />
           <span className="inline-flex items-center gap-1">
             <Icon name="camera" size={16} />
@@ -323,14 +326,29 @@ function SpotResultCard({ spot, selected, onSelect }: SpotResultCardProps) {
           </span>
           <PopularityBadge popularity={spot.popularity} />
         </div>
-        <Link
-          href={`/spots/${spot.id}`}
-          className="mt-1 inline-flex min-h-11 items-center gap-1 self-start text-base font-medium text-primary-strong hover:underline"
-          onClick={(e) => e.stopPropagation()}
-        >
-          詳細を見る
-          <Icon name="chevron-right" size={16} />
-        </Link>
+        <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
+          <Link
+            href={`/spots/${spot.id}`}
+            className="inline-flex min-h-11 items-center gap-1 text-base font-medium text-primary-strong hover:underline"
+            onClick={(e) => e.stopPropagation()}
+          >
+            詳細を見る
+            <Icon name="chevron-right" size={16} />
+          </Link>
+          <button
+            type="button"
+            aria-pressed={selected}
+            aria-label={`${spot.name}を地図で表示`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect();
+            }}
+            className="inline-flex min-h-11 items-center gap-1 rounded-card text-base text-text-muted hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          >
+            <Icon name="map-pin" size={16} />
+            地図で表示
+          </button>
+        </div>
       </div>
     </Card>
   );

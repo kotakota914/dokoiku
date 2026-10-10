@@ -35,8 +35,16 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
       email: u.email ?? null,
       profile,
       isAdmin: profile?.isAdmin ?? false,
-      suggestedDisplayName: String(meta.full_name ?? meta.name ?? u.email?.split("@")[0] ?? "ユーザー").slice(0, 20),
-      suggestedAvatarUrl: typeof meta.avatar_url === "string" ? meta.avatar_url : typeof meta.picture === "string" ? meta.picture : null,
+      suggestedDisplayName: String(meta.full_name ?? meta.name ?? u.email?.split("@")[0] ?? "ユーザー").slice(
+        0,
+        20,
+      ),
+      suggestedAvatarUrl:
+        typeof meta.avatar_url === "string"
+          ? meta.avatar_url
+          : typeof meta.picture === "string"
+            ? meta.picture
+            : null,
     };
   }
   const store = await cookies();
@@ -59,6 +67,22 @@ export async function requireUser(): Promise<CurrentUser> {
   const user = await getCurrentUser();
   if (!user) throw ApiError.unauthorized();
   return user;
+}
+
+/** プロフィール未作成（/welcome 未完了）のユーザーが書き込み API を呼んだときのエラー（details.reason） */
+export const PROFILE_REQUIRED_REASON = "profile_required";
+
+/**
+ * 書き込み系（投稿・リスト・プラン・いいね・通報・アップロード）の API で使う。
+ * 未ログインなら 401、初回ログイン直後でプロフィール（表示名）が未作成なら 403（details.reason = profile_required）。
+ * supabase モードでは profiles(id) を参照する FK があるため、ここで止めないと 500 になる（F-6-2）。
+ */
+export async function requireProfile(): Promise<CurrentUser & { profile: Profile }> {
+  const user = await requireUser();
+  if (!user.profile) {
+    throw new ApiError("FORBIDDEN", "先に表示名を設定してください", { reason: PROFILE_REQUIRED_REASON });
+  }
+  return { ...user, profile: user.profile };
 }
 
 /** 管理者専用 API で使う */

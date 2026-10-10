@@ -21,7 +21,9 @@ export function computeStayMinutes(
   pace: Pace,
 ): number {
   const base =
-    spot.postCount >= LIMITS.stayMedianMinPosts && spot.stayMinutesMedian !== null && spot.stayMinutesMedian > 0
+    spot.postCount >= LIMITS.stayMedianMinPosts &&
+    spot.stayMinutesMedian !== null &&
+    spot.stayMinutesMedian > 0
       ? spot.stayMinutesMedian
       : CATEGORY_DEFAULT_STAY_MIN[spot.category];
   const interestMul = (interests as readonly string[]).includes(spot.category) ? INTEREST_MULTIPLIER : 1;

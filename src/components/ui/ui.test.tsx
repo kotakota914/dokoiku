@@ -12,6 +12,7 @@ import { Textarea } from "./Input";
 import { ChipGroup } from "./ChipGroup";
 import { ToastProvider, useToast } from "./Toast";
 import { SuspendedNotice } from "./SuspendedNotice";
+import { Dialog } from "./Dialog";
 import { PhotoImage } from "./PhotoImage";
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -245,6 +246,98 @@ describe("Toast", () => {
     expect(container.textContent).toContain("保存しました");
     click(container.querySelector('button[aria-label="閉じる"]')!);
     expect(container.textContent).not.toContain("保存しました");
+  });
+});
+
+describe("Toast action", () => {
+  it("action を渡すと導線リンクが出て、押すとトーストが消える", () => {
+    function Trigger() {
+      const toast = useToast();
+      return (
+        <button
+          type="button"
+          onClick={() =>
+            toast.show({
+              type: "success",
+              message: "京都旅行に追加しました",
+              action: { label: "リストを見る", href: "/lists/l1" },
+            })
+          }
+        >
+          導線付き
+        </button>
+      );
+    }
+    const { container } = mount(
+      <ToastProvider>
+        <Trigger />
+      </ToastProvider>,
+    );
+    click(buttonByText(container, "導線付き"));
+    const link = container.querySelector('[role="status"] a')!;
+    expect(link).toHaveAttribute("href", "/lists/l1");
+    expect(link).toHaveTextContent("リストを見る");
+    // jsdom はページ遷移を実装していないので既定動作だけ止める（React の onClick は先に動く）
+    link.addEventListener("click", (e) => e.preventDefault());
+    act(() => {
+      link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+    expect(container.textContent).not.toContain("京都旅行に追加しました");
+  });
+});
+
+describe("Dialog", () => {
+  function tab(shift = false) {
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: shift, bubbles: true }));
+    });
+  }
+
+  it("開くとパネルへフォーカスし、Tab はダイアログ内で循環し、閉じると元のボタンへ戻る", () => {
+    function Wrapper() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            開く
+          </button>
+          <Dialog
+            open={open}
+            onClose={() => setOpen(false)}
+            title="確認"
+            footer={
+              <button type="button" onClick={() => setOpen(false)}>
+                OK
+              </button>
+            }
+          >
+            <input aria-label="名前" />
+          </Dialog>
+        </>
+      );
+    }
+    const { container } = mount(<Wrapper />);
+    const opener = buttonByText(container, "開く");
+    act(() => opener.focus());
+    click(opener);
+    const panel = container.querySelector('[role="dialog"]')!;
+    expect(panel).toHaveAttribute("aria-modal", "true");
+    expect(document.activeElement).toBe(panel);
+
+    // パネルから Tab → 先頭（閉じるボタン）。末尾（OK）から Tab → 先頭。先頭から Shift+Tab → 末尾
+    tab();
+    const closeBtn = panel.querySelector('button[aria-label="閉じる"]')!;
+    expect(document.activeElement).toBe(closeBtn);
+    const ok = buttonByText(panel as HTMLElement, "OK");
+    act(() => ok.focus());
+    tab();
+    expect(document.activeElement).toBe(closeBtn);
+    tab(true);
+    expect(document.activeElement).toBe(ok);
+
+    click(ok);
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(opener);
   });
 });
 

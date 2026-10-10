@@ -11,7 +11,8 @@ import { serverConfig } from "@/lib/config";
 export async function createSupabaseServerClient() {
   const url = serverConfig.supabaseUrl;
   const key = serverConfig.supabaseAnonKey;
-  if (!url || !key) throw new Error("NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY が設定されていません");
+  if (!url || !key)
+    throw new Error("NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY が設定されていません");
   const cookieStore = await cookies();
   return createServerClient(url, key, {
     cookies: {
