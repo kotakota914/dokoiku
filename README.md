@@ -11,7 +11,6 @@
 | 正式リリース | F-4 リスト共有、F-7 通報・管理 API、UI・性能改善                                                                                                                              |
 
 JPHACKS のデモ対象は「MVP ＋ 行きたい場所リスト ＋ 経路作成」（`docs/decisions.md` Q1）。
-`docs/implementation-report.md`：初回実装の報告（検証結果、実装範囲、未確認事項、引き継ぎ）
 
 ## デモの導線
 
@@ -95,4 +94,5 @@ npm run check        # typecheck + lint + test
 - [decisions.md](./docs/decisions.md)：15章の検討事項への回答と追加 ADR
 - [setup.md](./docs/setup.md)：ローカル起動、Supabase モード、Vercel、GitHub Actions、無料枠の確認項目
 - [supabase-setup.md](./docs/supabase-setup.md)：Supabase プロジェクトの作成、migration、Google ログイン、Storage
+- [implementation-report.md](./docs/implementation-report.md)：初回実装の報告（検証結果、実装範囲、未確認事項、引き継ぎ）
 - [AGENTS.md](./AGENTS.md)：開発規則（UI 規約、契約ファイル、並行作業のルール）
