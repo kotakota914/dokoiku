@@ -313,6 +313,8 @@ class MemoryRepositoryImpl implements MemoryRepository {
       width: img.width,
       height: img.height,
       sortOrder: img.sortOrder,
+      fullPath: img.fullPath,
+      thumbPath: img.thumbPath,
     };
   }
 

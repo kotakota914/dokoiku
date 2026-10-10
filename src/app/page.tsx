@@ -1,8 +1,19 @@
+import type { Metadata } from "next";
+import { MapHome } from "@/components/home/MapHome";
+
+export const metadata: Metadata = {
+  title: "マップ",
+};
+
+/**
+ * S-01 マップ（トップ）。ログイン不要。
+ * AppShell の main は flex-1 min-h-0 なので、地図の高さが 0 にならないよう明示する
+ * （スマホ：画面から下部ナビを引いた高さ、PC：画面からヘッダーを引いた高さ）。
+ */
 export default function HomePage() {
-  // フェーズ2でマップ画面（S-01）に置き換える
   return (
-    <main className="flex flex-1 items-center justify-center p-6">
-      <p className="text-text-muted">準備中です</p>
-    </main>
+    <div className="flex h-[calc(100dvh-var(--bottom-nav-height)-env(safe-area-inset-bottom))] min-h-0 flex-col lg:h-[calc(100dvh-var(--header-height))]">
+      <MapHome />
+    </div>
   );
 }

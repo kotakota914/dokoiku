@@ -211,8 +211,8 @@ export const USAGE_LIMITS = {
   ors_directions: { provider: "ors", feature: "route_planning" as Feature, period: "day" as const, limit: 2000 },
   ors_matrix: { provider: "ors", feature: "route_planning" as Feature, period: "day" as const, limit: 500 },
   nominatim: { provider: "nominatim", feature: "external_search" as Feature, period: "day" as const, limit: 500 },
-  supabase_storage: { provider: "supabase", feature: "post_create" as Feature, period: "month" as const, limit: 1024 * 1024 * 1024 },
-  supabase_db: { provider: "supabase", feature: "post_create" as Feature, period: "month" as const, limit: 500 * 1024 * 1024 },
+  supabase_storage: { provider: "supabase_storage", feature: "post_create" as Feature, period: "month" as const, limit: 1024 * 1024 * 1024 },
+  supabase_db: { provider: "supabase_db", feature: "post_create" as Feature, period: "month" as const, limit: 500 * 1024 * 1024 },
 } as const;
 export type UsageKey = keyof typeof USAGE_LIMITS;
 

@@ -1,0 +1,56 @@
+# =============================================================================
+# 一時ファイル・キャッシュの削除（要件定義書 12章）
+# 毎日 4:30 JST（= 19:30 UTC）に scripts/ops/cleanup.ts を実行する。
+#   - Storage の posts/tmp/ にある 24 時間以上前の一時ファイルを削除（投稿されなかった写真）
+#   - travel_time_cache の 30 日より古い行を削除
+#
+# 必要な secrets
+#   SUPABASE_URL               Project URL（アプリの NEXT_PUBLIC_SUPABASE_URL と同じ値）
+#   SUPABASE_SERVICE_ROLE_KEY  service_role キー（RLS を通らない。Actions の secrets 以外に置かない）
+#   NOTIFY_WEBHOOK_URL         （任意）Discord Webhook URL
+# =============================================================================
+name: cleanup
+
+on:
+  schedule:
+    - cron: "30 19 * * *" # 4:30 JST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      # @supabase/supabase-js だけ必要だが、lockfile どおりに入れて再現性を優先する
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run cleanup
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+        run: node --experimental-strip-types scripts/ops/cleanup.ts
+
+      - name: Notify failure (Discord)
+        if: failure()
+        env:
+          NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+        run: |
+          [ -n "$NOTIFY_WEBHOOK_URL" ] || exit 0
+          MSG="[dokoiko][error] 一時ファイル削除に失敗しました: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          curl -fsS -H 'Content-Type: application/json' -d "$(jq -cn --arg c "$MSG" '{content:$c}')" "$NOTIFY_WEBHOOK_URL" || true

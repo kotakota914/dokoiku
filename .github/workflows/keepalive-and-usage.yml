@@ -1,0 +1,129 @@
+# =============================================================================
+# 無料プランの休止防止と使用量の記録（要件定義書 12章・14章、ADR-0015、Q4）
+# 毎日 5:15 JST（= 20:15 UTC）に
+#   1. select 1 で DB にアクセスし、1 週間アクセスなしによる一時停止を防ぐ
+#   2. pg_database_size と storage.objects の合計サイズを api_usage へ書き込む
+#      - provider = 'supabase_db'      feature = 'post_create' period = 当月 'YYYY-MM' limit = 500MB
+#      - provider = 'supabase_storage' feature = 'post_create' period = 当月 'YYYY-MM' limit = 1GB
+#      （主キーが provider, feature, period のため DB と Storage は provider を分けて別々の行にする。
+#        src/lib/domain/constants.ts の USAGE_LIMITS.supabase_db / supabase_storage の limit と同じ値）
+#      - どちらかが 80%（USAGE_SUSPEND_RATIO）以上なら suspended_at を入れ、GET /api/v1/system/status が
+#        post_create を停止中として返す。80% 未満に戻れば suspended_at を外す（再開）。
+#      - 停止・再開が切り替わったときは NOTIFY_WEBHOOK_URL があれば Discord へ通知する（F-8-3）
+#
+# 必要な secrets
+#   SUPABASE_DB_URL     backup-db.yml と同じ接続文字列
+#   NOTIFY_WEBHOOK_URL  （任意）Discord Webhook URL
+# =============================================================================
+name: keepalive-and-usage
+
+on:
+  schedule:
+    - cron: "15 20 * * *" # 5:15 JST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keepalive-and-usage
+  cancel-in-progress: false
+
+env:
+  DB_LIMIT_BYTES: "524288000" # 500 MB
+  STORAGE_LIMIT_BYTES: "1073741824" # 1 GB
+  SUSPEND_RATIO: "0.8"
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install psql
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+          psql --version
+
+      - name: Keepalive (select 1)
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_DB_URL" || { echo "SUPABASE_DB_URL が未設定です"; exit 1; }
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -tAc "select 1"
+
+      - name: Record usage into api_usage
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          # 戻り値：provider|count|limit|before_suspended|after_suspended の行（DB と Storage の 2 行）
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -tA -F '|' \
+            -v db_limit="$DB_LIMIT_BYTES" -v storage_limit="$STORAGE_LIMIT_BYTES" -v ratio="$SUSPEND_RATIO" \
+            > usage.txt <<'SQL'
+          with period as (
+            select to_char(now() at time zone 'Asia/Tokyo', 'YYYY-MM') as p
+          ),
+          measured as (
+            select 'supabase_db'::text as provider, pg_database_size(current_database())::bigint as count, (:'db_limit')::bigint as lim
+            union all
+            select 'supabase_storage', coalesce(sum((metadata->>'size')::bigint), 0)::bigint, (:'storage_limit')::bigint
+            from storage.objects
+          ),
+          before as (
+            select m.provider, u.suspended_at
+            from measured m
+            left join public.api_usage u on u.provider = m.provider and u.feature = 'post_create' and u.period = (select p from period)
+          ),
+          upserted as (
+            insert into public.api_usage (provider, feature, period, count, "limit", suspended_at)
+            select m.provider, 'post_create', (select p from period), m.count, m.lim,
+                   case when m.count >= m.lim * (:'ratio')::numeric then coalesce(b.suspended_at, now()) else null end
+            from measured m
+            join before b on b.provider = m.provider
+            on conflict (provider, feature, period) do update
+              set count = excluded.count,
+                  "limit" = excluded."limit",
+                  suspended_at = excluded.suspended_at
+            returning provider, count, "limit", suspended_at
+          )
+          select u.provider, u.count, u."limit",
+                 (b.suspended_at is not null) as before_suspended,
+                 (u.suspended_at is not null) as after_suspended
+          from upserted u join before b on b.provider = u.provider
+          order by u.provider;
+          SQL
+          cat usage.txt
+
+      - name: Notify when suspended state changes (Discord)
+        env:
+          NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          MSG=""
+          while IFS='|' read -r provider count limit before after; do
+            [ -n "$provider" ] || continue
+            pct=$(( count * 100 / limit ))
+            echo "${provider}: ${count} / ${limit} bytes (${pct}%) suspended=${after}"
+            if [ "$before" != "$after" ]; then
+              if [ "$after" = "t" ]; then
+                MSG="${MSG}[dokoiko][warn] ${provider} が無料枠の ${pct}% に達したため新規投稿を停止しました\n"
+              else
+                MSG="${MSG}[dokoiko] ${provider} が ${pct}% に下がったため新規投稿を再開しました\n"
+              fi
+            fi
+          done < usage.txt
+          [ -n "$MSG" ] || { echo "停止状態の変化なし"; exit 0; }
+          printf '%b' "$MSG"
+          [ -n "$NOTIFY_WEBHOOK_URL" ] || { echo "NOTIFY_WEBHOOK_URL 未設定のため Discord 通知は省略"; exit 0; }
+          curl -fsS -H 'Content-Type: application/json' -d "$(jq -cn --arg c "$(printf '%b' "$MSG")" '{content:$c}')" "$NOTIFY_WEBHOOK_URL" || true
+
+      - name: Notify failure (Discord)
+        if: failure()
+        env:
+          NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+        run: |
+          [ -n "$NOTIFY_WEBHOOK_URL" ] || exit 0
+          MSG="[dokoiko][error] 休止防止・使用量記録に失敗しました: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          curl -fsS -H 'Content-Type: application/json' -d "$(jq -cn --arg c "$MSG" '{content:$c}')" "$NOTIFY_WEBHOOK_URL" || true

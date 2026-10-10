@@ -1,0 +1,123 @@
+# =============================================================================
+# DB バックアップ（要件定義書 12章、F-9、ADR-0011）
+# 毎日 3:00 JST（= 18:00 UTC）に pg_dump → gzip → openssl で暗号化 → Cloudflare R2 へ保存し、
+# 30 日より古いバックアップを削除する。失敗時は GitHub の既定通知に加え、
+# NOTIFY_WEBHOOK_URL があれば Discord へ通知する（Q14）。
+#
+# 必要な secrets（Settings > Secrets and variables > Actions）
+#   SUPABASE_DB_URL     Supabase > Project Settings > Database > Connection string（URI、Session mode 推奨）
+#                       例: postgresql://postgres.<ref>:<password>@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres
+#   BACKUP_PASSPHRASE   暗号化パスフレーズ（長いランダム文字列。復元時に必要なので別途安全に保管する）
+#   R2_ACCOUNT_ID       Cloudflare アカウント ID（エンドポイント https://<id>.r2.cloudflarestorage.com）
+#   R2_ACCESS_KEY_ID    R2 API トークン（Object Read & Write）のアクセスキー
+#   R2_SECRET_ACCESS_KEY 同シークレット
+#   R2_BUCKET           バックアップ用バケット名（例: dokoiko-backup）
+#   NOTIFY_WEBHOOK_URL  （任意）Discord Webhook URL
+#
+# 復元（ローカル。毎月の復元テストに使う）
+#   aws s3 cp s3://<bucket>/db/dokoiko-YYYYMMDD-HHMMSS.sql.gz.enc . --endpoint-url https://<id>.r2.cloudflarestorage.com
+#   openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in dokoiko-....sql.gz.enc -pass env:BACKUP_PASSPHRASE | gunzip > dump.sql
+#   psql "$LOCAL_DATABASE_URL" -f dump.sql
+# =============================================================================
+name: backup-db
+
+on:
+  schedule:
+    - cron: "0 18 * * *" # 3:00 JST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup-db
+  cancel-in-progress: false
+
+env:
+  RETENTION_DAYS: "30"
+  PG_MAJOR: "17"
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Install pg_dump (PostgreSQL ${{ env.PG_MAJOR }} client)
+        run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc > /dev/null
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq "postgresql-client-${PG_MAJOR}"
+          pg_dump --version
+
+      - name: Dump, compress, encrypt
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_DB_URL" || { echo "SUPABASE_DB_URL が未設定です"; exit 1; }
+          test -n "$BACKUP_PASSPHRASE" || { echo "BACKUP_PASSPHRASE が未設定です"; exit 1; }
+          STAMP="$(date -u +%Y%m%d-%H%M%S)"
+          FILE="dokoiko-${STAMP}.sql.gz.enc"
+          echo "FILE=${FILE}" >> "$GITHUB_ENV"
+          # public（アプリのテーブル・関数）、auth（ユーザー）、storage（写真のメタデータ）を平文 SQL で取得。
+          # 所有者・権限は Supabase 側で管理されるため含めない。
+          pg_dump "$SUPABASE_DB_URL" \
+            --no-owner --no-privileges --clean --if-exists \
+            --schema=public --schema=auth --schema=storage \
+            --exclude-table-data='auth.audit_log_entries' \
+            --exclude-table-data='auth.refresh_tokens' \
+            --exclude-table-data='auth.sessions' \
+            --exclude-table-data='auth.flow_state' \
+            --exclude-table-data='auth.mfa_*' \
+            --exclude-table-data='auth.one_time_tokens' \
+            --exclude-table-data='storage.s3_multipart_uploads*' \
+          | gzip -9 \
+          | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:BACKUP_PASSPHRASE -out "$FILE"
+          ls -l "$FILE"
+          # 空のダンプ（接続失敗など）を保存しない
+          test "$(stat -c %s "$FILE")" -gt 1024
+
+      - name: Upload to Cloudflare R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          set -euo pipefail
+          aws s3 cp "$FILE" "s3://${R2_BUCKET}/db/${FILE}" --endpoint-url "$R2_ENDPOINT" --only-show-errors
+          echo "uploaded s3://${R2_BUCKET}/db/${FILE}"
+
+      - name: Delete backups older than ${{ env.RETENTION_DAYS }} days
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          set -euo pipefail
+          CUTOFF="$(date -u -d "-${RETENTION_DAYS} days" +%Y-%m-%dT%H:%M:%S)"
+          aws s3api list-objects-v2 --bucket "$R2_BUCKET" --prefix "db/" --endpoint-url "$R2_ENDPOINT" \
+            --query "Contents[?LastModified<'${CUTOFF}'].Key" --output text \
+          | tr '\t' '\n' | grep -v '^None$' | grep -v '^$' \
+          | while read -r key; do
+              echo "delete ${key}"
+              aws s3 rm "s3://${R2_BUCKET}/${key}" --endpoint-url "$R2_ENDPOINT" --only-show-errors
+            done || true
+
+      - name: Notify failure (Discord)
+        if: failure()
+        env:
+          NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+        run: |
+          [ -n "$NOTIFY_WEBHOOK_URL" ] || { echo "NOTIFY_WEBHOOK_URL 未設定のため Discord 通知は省略"; exit 0; }
+          MSG="[dokoiko][error] DB バックアップに失敗しました: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          curl -fsS -H 'Content-Type: application/json' -d "$(jq -cn --arg c "$MSG" '{content:$c}')" "$NOTIFY_WEBHOOK_URL" || true

@@ -1,0 +1,83 @@
+# =============================================================================
+# 写真バックアップ（要件定義書 12章）
+# 毎週月曜 4:00 JST（= 日曜 19:00 UTC）に Supabase Storage の post-images バケットを
+# Cloudflare R2 へ rclone で同期する。
+#
+# 方法：Supabase Storage の S3 互換エンドポイントと R2 の S3 互換エンドポイントを
+# どちらも rclone の s3 リモートとして環境変数で設定し、rclone sync で差分同期する。
+# （supabase CLI には Storage の一括ダウンロードが無いため rclone を使う）
+#   - Supabase 側：Dashboard > Project Settings > Storage > S3 Connection で
+#     「Enable connection via S3 protocol」を有効にし、S3 Access Keys を作成する。
+#   - 同期は一方向（Supabase → R2）。R2 側にしか無いファイルは削除される（sync）。
+#     誤削除から守りたい場合は `rclone copy` に変える（削除を反映しない）。
+#
+# 必要な secrets
+#   SUPABASE_S3_ENDPOINT        例: https://<project-ref>.supabase.co/storage/v1/s3
+#   SUPABASE_S3_REGION          プロジェクトのリージョン（例: ap-northeast-1）
+#   SUPABASE_S3_ACCESS_KEY_ID   S3 Access Keys のアクセスキー
+#   SUPABASE_S3_SECRET_ACCESS_KEY 同シークレット
+#   R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_BUCKET（backup-db.yml と同じ）
+#   NOTIFY_WEBHOOK_URL          （任意）Discord Webhook URL
+# =============================================================================
+name: backup-photos
+
+on:
+  schedule:
+    - cron: "0 19 * * 0" # 月曜 4:00 JST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup-photos
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # rclone はリモート設定を RCLONE_CONFIG_<NAME>_<KEY> から読む
+      RCLONE_CONFIG_SUPABASE_TYPE: s3
+      RCLONE_CONFIG_SUPABASE_PROVIDER: Other
+      RCLONE_CONFIG_SUPABASE_ENDPOINT: ${{ secrets.SUPABASE_S3_ENDPOINT }}
+      RCLONE_CONFIG_SUPABASE_REGION: ${{ secrets.SUPABASE_S3_REGION }}
+      RCLONE_CONFIG_SUPABASE_ACCESS_KEY_ID: ${{ secrets.SUPABASE_S3_ACCESS_KEY_ID }}
+      RCLONE_CONFIG_SUPABASE_SECRET_ACCESS_KEY: ${{ secrets.SUPABASE_S3_SECRET_ACCESS_KEY }}
+      RCLONE_CONFIG_SUPABASE_FORCE_PATH_STYLE: "true"
+      RCLONE_CONFIG_R2_TYPE: s3
+      RCLONE_CONFIG_R2_PROVIDER: Cloudflare
+      RCLONE_CONFIG_R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+      RCLONE_CONFIG_R2_REGION: auto
+      RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+    steps:
+      - name: Install rclone
+        run: |
+          set -euo pipefail
+          curl -fsSL https://rclone.org/install.sh | sudo bash
+          rclone version
+
+      - name: Sync post-images to R2
+        run: |
+          set -euo pipefail
+          test -n "$RCLONE_CONFIG_SUPABASE_ENDPOINT" || { echo "SUPABASE_S3_ENDPOINT が未設定です"; exit 1; }
+          test -n "$R2_BUCKET" || { echo "R2_BUCKET が未設定です"; exit 1; }
+          # 一時ファイル（posts/tmp/）は対象外。--checksum は S3 互換で ETag 比較になるため size+modtime の既定で同期する
+          rclone sync "supabase:post-images" "r2:${R2_BUCKET}/photos/post-images" \
+            --exclude "posts/tmp/**" \
+            --transfers 8 --checkers 16 --s3-no-check-bucket \
+            --stats 30s --stats-one-line --log-level INFO
+          echo "同期後のファイル数:"
+          rclone size "r2:${R2_BUCKET}/photos/post-images"
+
+      - name: Notify failure (Discord)
+        if: failure()
+        env:
+          NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+        run: |
+          [ -n "$NOTIFY_WEBHOOK_URL" ] || exit 0
+          MSG="[dokoiko][error] 写真バックアップに失敗しました: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          curl -fsS -H 'Content-Type: application/json' -d "$(jq -cn --arg c "$MSG" '{content:$c}')" "$NOTIFY_WEBHOOK_URL" || true
