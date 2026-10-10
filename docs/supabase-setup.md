@@ -14,10 +14,14 @@
 
 1. https://supabase.com/dashboard で New project。リージョンは Northeast Asia (Tokyo) を推奨。
 2. Database password は控えておく（CLI で `db push` するときに使う）。
-3. Project Settings > API で次を控える。
-   - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
-   - anon public キー → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - service_role キー → `SUPABASE_SERVICE_ROLE_KEY`（サーバー専用。ブラウザへ出さない）
+3. 接続情報を控える（Dashboard の画面構成は時期によって変わる。次のどちらかで見つかる）。
+   - **いちばん簡単**：プロジェクトのトップ画面の上部にある **Connect** ボタン → **App Frameworks** → Next.js を選ぶと、`.env` に貼る形で URL とキーがそのまま表示される。
+   - **設定画面から**：左下の歯車 **Project Settings** → **Data API** に Project URL（`https://xxxx.supabase.co`）、同じ設定の **API Keys** にキーがある。
+   - 対応関係：
+     - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
+     - 公開用キー（`anon` または新形式の `sb_publishable_...`）→ `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+     - サーバー用キー（`service_role` または新形式の `sb_secret_...`）→ `SUPABASE_SERVICE_ROLE_KEY`（サーバー専用。ブラウザへ出さない。GitHub にも載せない）
+   - 新形式のキーは「API Keys」ページで作成する。旧形式（anon / service_role）は「Legacy API keys」タブにある。どちらでも動く。
 
 ## 2. migration と seed を適用する
 
