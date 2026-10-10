@@ -118,6 +118,9 @@ export interface PostImageView {
   width: number;
   height: number;
   sortOrder: number;
+  /** Storage 上のパス（投稿の編集・削除で古い画像を消すために API が使う）。公開バケットなので露出しても問題ない */
+  fullPath?: string;
+  thumbPath?: string;
 }
 
 export interface Post {
