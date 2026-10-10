@@ -1,0 +1,7 @@
+.next
+node_modules
+.data
+playwright-report
+test-results
+package-lock.json
+docs/要件定義書.md

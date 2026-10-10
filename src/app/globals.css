@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+/*
+ * デザイントークン（8.3）。ライトモードのみ（Q12）。
+ * 色は必ずここの変数（Tailwind では text-primary / bg-surface などのクラス）を使い、
+ * 直接の色コードを画面に書かない。
+ */
+:root {
+  /* メインカラー：空色（Q12 未定のため仮。ここを変えれば全体に反映される） */
+  --color-primary: #1c7ed6;
+  --color-primary-strong: #1864ab;
+  --color-primary-soft: #e7f1fb;
+  --color-on-primary: #ffffff;
+
+  --color-background: #f7f8fa;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f1f3f5;
+  --color-border: #dee2e6;
+  --color-border-strong: #adb5bd;
+
+  --color-text: #212529;
+  --color-text-muted: #6c757d;
+  --color-text-faint: #adb5bd;
+
+  --color-danger: #c92a2a;
+  --color-danger-soft: #fff0f0;
+  --color-warning: #b35c00;
+  --color-warning-soft: #fff4e6;
+  --color-success: #2b8a3e;
+  --color-success-soft: #ebfbee;
+
+  /* 人気度（F-1-5）：枠の色。文字ラベルを必ず添える */
+  --color-popularity-normal: #adb5bd;
+  --color-popularity-popular: #f59f00;
+  --color-popularity-very: #e8590c;
+
+  --radius-card: 12px;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sheet: 0 -4px 16px rgba(0, 0, 0, 0.08);
+
+  /* 下部ナビの高さ（スマホ）。地図やシートの余白計算に使う */
+  --bottom-nav-height: 64px;
+  --header-height: 56px;
+}
+
+@theme inline {
+  --color-primary: var(--color-primary);
+  --color-primary-strong: var(--color-primary-strong);
+  --color-primary-soft: var(--color-primary-soft);
+  --color-on-primary: var(--color-on-primary);
+  --color-background: var(--color-background);
+  --color-surface: var(--color-surface);
+  --color-surface-muted: var(--color-surface-muted);
+  --color-border: var(--color-border);
+  --color-border-strong: var(--color-border-strong);
+  --color-text: var(--color-text);
+  --color-text-muted: var(--color-text-muted);
+  --color-text-faint: var(--color-text-faint);
+  --color-danger: var(--color-danger);
+  --color-danger-soft: var(--color-danger-soft);
+  --color-warning: var(--color-warning);
+  --color-warning-soft: var(--color-warning-soft);
+  --color-success: var(--color-success);
+  --color-success-soft: var(--color-success-soft);
+  --color-popularity-normal: var(--color-popularity-normal);
+  --color-popularity-popular: var(--color-popularity-popular);
+  --color-popularity-very: var(--color-popularity-very);
+  --radius-card: var(--radius-card);
+  --font-sans:
+    "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "BIZ UDPGothic", Meiryo, system-ui,
+    -apple-system, sans-serif;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  /* 8.3：本文は 16px 以上 */
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+
+/* 8.3：入力欄も 16px（iOS Safari の自動ズームを防ぐ） */
+input,
+select,
+textarea,
+button {
+  font: inherit;
+  font-size: 16px;
+}
+
+/* lucide の loader-circle を回す */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.animate-spin-slow {
+  animation: spin 1s linear infinite;
+}
+
+/* MapLibre のデフォルト CSS はコンポーネント側で import する（maplibre-gl/dist/maplibre-gl.css） */
