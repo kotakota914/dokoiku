@@ -117,3 +117,18 @@
 
 - **F-5-1 昼食休憩は 11:30〜13:30 の間だけ**（F5-03）：スポット出発直後の昼食は出発時刻が窓の中（`lunchWindowStart`〜`lunchWindowEnd`）のときだけ入れる。窓の前に到着して窓の終わりを過ぎるまで滞在する（1 つの滞在が窓を跨ぎ、空きが無い）ときは、窓の外（13:30 以降）には入れず昼食なしとする。窓の外の早めの昼食や滞在の分割、到着の繰り下げ（待ち時間）は行わない。昼食なしは `ScheduleResult.lunchSkipped`（planner 内部）と、画面でも同じ判定ができる純粋関数 `isLunchSkipped(lunchBreak, startMin, items)` で表し、`PlanResultView` に「昼食休憩を入れられませんでした（11:30〜13:30 の間に空きがありません）」を `coffee` アイコン付きで表示する。`PlanResult`（契約）には項目を増やさない（保存済みプランでも同じ判定で表示できる）。訪問順の探索は昼食の有無を点数に含めない（既知の制約）。
 - **F-5 10 か所の計算時間**（F5-07）：11.7 の除外ループで「どれを外すか」の比較は、残りが 7 か所以上（`EXHAUSTIVE_COMPARE_MAX_SPOTS = 6` 超）なら全順列ではなく最近傍法＋2-opt／Or-opt の候補（`heuristicOrders`）だけで行い、外したあとに残った集合だけを従来どおり全探索（8 か所以下は全順列）で評価する。残りが 6 か所以下の比較は従来どおり全探索。手元の計測（`planner.test.ts`）では 10 か所・終了 15:00 が 1.69 秒 → 0.31 秒、10 か所・終了 11:00（除外 8 段）が 1.78 秒 → 0.27 秒。比較を近似にしたことで、どのスポットを外すかの選択が全探索と異なる場合があるが、最終的な訪問順は全探索で決めるため採用した順の品質は変わらない。本番（Vercel）での計測は未実施。
+
+## 7. SNS 共有の方針（ADR-0020）
+
+外部 API（LINE Messaging API、X API、Instagram Graph API など）の審査・連携は行わず、ブラウザの標準機能と OGP だけで LINE / X / Instagram への共有を実現する。
+
+- **共有の入口は共通部品 `ShareButton`**（`src/components/share/ShareButton.tsx`）。スポット詳細（ヘッダー）、保存済みプラン（ヘッダーと「しおり画像を共有」）、リスト詳細の共有ダイアログ、共有リスト（ヘッダー）に置く。アイコンは `share-2`。
+  - `navigator.share` がある端末（主にスマホ）は OS の共有シートを開く。画像がある場合は `navigator.canShare({ files })` で判定して PNG も渡す。
+  - 無い環境（PC）は小さなダイアログで「リンクをコピー」（`navigator.clipboard`）、「Xで投稿」（`https://twitter.com/intent/tweet?text=&url=`）、「LINEで送る」（`https://social-plugins.line.me/lineit/share?url=`）を出す。既にダイアログの中にいるリストの共有では、入れ子を避けて同じ選択肢（`ShareOptions`）をダイアログ内に並べる。
+  - 共有 URL はブラウザの `window.location.origin` を基準にした絶対 URL（`serverConfig.siteUrl` は使わない。共有 URL と同じ方針）。
+- **リンクのカード表示は OGP**。`src/app/layout.tsx` に既定値（`metadataBase` = `serverConfig.siteUrl`、siteName「旅行どこいこう」、`ja_JP`、`twitter:card` = `summary_large_image`）、各ページの `generateMetadata` に `openGraph.title/description/url`（`src/lib/og/metadata.ts` の `pageOpenGraph`。Next.js は `openGraph` を深く併合しないため siteName / locale もここで付ける）。画像は `opengraph-image.tsx`（`next/og` の `ImageResponse`、1200x630）をスポット詳細・保存済みプラン・共有リストに置く。
+  - **日本語フォント**：Satori に同梱されるのは英数（Geist）だけで日本語は描けない。`public/fonts/` にフォントを置かない方針のため、実行時に Google Fonts（`css2?family=Noto+Sans+JP&text=…`）から必要な文字だけのサブセット TTF を取得する（`src/lib/og/fonts.ts`。5 秒でタイムアウト、プロセス内でキャッシュ）。取得に失敗したら英数だけの文言（`asciiOnly`）で描く。
+  - **背景写真**：スポットの代表写真を `fetch` して data URI にする（`src/lib/og/images.ts`）。memory モードの相対 URL（`/api/dev/files/…`、`/seed/photos/…`）は `serverConfig.siteUrl` を基準に絶対 URL にするため、`NEXT_PUBLIC_SITE_URL` が実際の URL と違うと写真なしのレイアウトになる（失敗時は写真なし）。
+  - 保存済みプランの OGP 画像は本人以外も取得できる（UUID を知っている必要がある）が、載せるのは日付・スポット数・合計移動時間・移動手段の集計値だけで、スポット名や座標は出さない。プランのページ自体はログイン必須のため、LINE / X のクローラーは `/login` へリダイレクトされ、プランのカードは表示されない（既知の制約。リンク共有は本人の別端末・メモ用途）。
+- **Instagram は画像で共有**。Instagram にはリンク共有の仕組みが無いため、保存済みプランの「旅のしおり画像」（`GET /api/v1/plans/{planId}/image`、本人のみ、1080x1920 の PNG。タイトル・日付・タイムライン・サービス名）を `ShareButton` の `imageBlob` として共有シートに渡し、ユーザーが Instagram ストーリー等を選ぶ。PC では `<a download>` でダウンロードする。
+- **8.1 アイコン対応表の追加**：リンクをコピー → `copy`、画像を保存 → `download`（`src/components/ui/icons.tsx`）。

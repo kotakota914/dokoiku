@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { SharedListView } from "@/components/list/SharedListView";
+import { pageOpenGraph } from "@/lib/og/metadata";
 import { getRepo } from "@/lib/repo";
 
 type Props = { params: Promise<{ token: string }> };
@@ -10,9 +11,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const repo = await getRepo();
   const list = await repo.wishlists.getByShareToken(token);
   if (!list) return { title: "このリストは共有されていません" };
+  const title = `${list.name}（共有リスト）`;
+  const description = `${list.ownerDisplayName}さんの行きたい場所リスト（${list.items.length}件）`;
   return {
-    title: `${list.name}（共有リスト）`,
-    description: `${list.ownerDisplayName}さんの行きたい場所リスト`,
+    title,
+    description,
+    openGraph: pageOpenGraph({ title, description, url: `/shared/${encodeURIComponent(token)}` }),
   };
 }
 

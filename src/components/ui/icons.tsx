@@ -15,6 +15,8 @@ import {
   CirclePause,
   Clock,
   Coffee,
+  Copy,
+  Download,
   ExternalLink,
   EyeOff,
   Flag,
@@ -66,7 +68,7 @@ import { cn } from "./cn";
 /**
  * 8.1 の対応表。アイコン名（kebab-case）→ lucide-react の実体。
  * 対応表に無い用途（レビュー後に追加。docs/decisions.md）：人気 → trending-up、プラン保存 → save、
- * 非表示 → eye-off、次へ・進む → chevron-right
+ * 非表示 → eye-off、次へ・進む → chevron-right、リンクをコピー → copy、画像を保存 → download
  */
 const ICONS = {
   map: MapIcon,
@@ -100,6 +102,8 @@ const ICONS = {
   "chevron-left": ChevronLeft,
   "chevron-right": ChevronRight,
   "external-link": ExternalLink,
+  copy: Copy,
+  download: Download,
   "refresh-cw": RefreshCw,
   "loader-circle": LoaderCircle,
   "circle-alert": CircleAlert,

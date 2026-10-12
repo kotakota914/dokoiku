@@ -4,10 +4,24 @@ import { AppShell, type AppShellUser } from "@/components/layout/AppShell";
 import { SystemStatusProvider } from "@/components/system/SystemStatusProvider";
 import { ToastProvider } from "@/components/ui/Toast";
 import { getCurrentUser } from "@/lib/auth/server";
+import { serverConfig } from "@/lib/config";
 
+const SITE_NAME = "旅行どこいこう";
+const SITE_DESCRIPTION = "写真付きの地図でスポットを探し、無理のない回り方を自動で作る旅行計画アプリ";
+
+/** OGP の既定値。各ページの generateMetadata で title / description / url を上書きする */
 export const metadata: Metadata = {
-  title: { default: "旅行どこいこう", template: "%s | 旅行どこいこう" },
-  description: "写真付きの地図でスポットを探し、無理のない回り方を自動で作る旅行計画アプリ",
+  metadataBase: new URL(serverConfig.siteUrl),
+  title: { default: SITE_NAME, template: `%s | ${SITE_NAME}` },
+  description: SITE_DESCRIPTION,
+  openGraph: {
+    siteName: SITE_NAME,
+    type: "website",
+    locale: "ja_JP",
+    title: SITE_NAME,
+    description: SITE_DESCRIPTION,
+  },
+  twitter: { card: "summary_large_image" },
 };
 
 export const viewport: Viewport = {

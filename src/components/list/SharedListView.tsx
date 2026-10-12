@@ -5,8 +5,11 @@
  */
 import type { SharedWishlist } from "@/lib/domain/types";
 import { Badge, EmptyState, Icon, PageHeader } from "@/components/ui";
+import { ShareButton } from "@/components/share/ShareButton";
+import { listShareText } from "@/components/share/shareLinks";
 import { ListItemRow } from "./ListItemRow";
 import { ListSpotMap } from "./ListSpotMap";
+import { sharePath } from "./shareUrl";
 
 export interface SharedListViewProps {
   token: string;
@@ -16,7 +19,19 @@ export interface SharedListViewProps {
 export function SharedListView({ token, list }: SharedListViewProps) {
   return (
     <div className="flex flex-1 flex-col">
-      <PageHeader title={list.name} backHref="/" />
+      <PageHeader
+        title={list.name}
+        backHref="/"
+        actions={
+          <ShareButton
+            variant="icon"
+            label="このリストを共有"
+            title={list.name}
+            text={listShareText(list.name, list.items.length)}
+            url={sharePath(token)}
+          />
+        }
+      />
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6">
         <div className="flex flex-wrap items-center gap-3">
           <p className="inline-flex items-center gap-1 text-base text-text-muted">

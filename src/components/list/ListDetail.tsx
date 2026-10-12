@@ -300,6 +300,8 @@ export function ListDetail({ list: initialList }: ListDetailProps) {
         open={dialog.kind === "share"}
         listId={list.id}
         shareToken={list.shareToken}
+        listName={list.name}
+        itemCount={list.items.length}
         onClose={close}
         onChange={(shareToken) => setList((prev) => ({ ...prev, shareToken }))}
       />

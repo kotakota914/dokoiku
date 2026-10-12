@@ -7,10 +7,14 @@
  * - タイムライン：並び替え・滞在時間変更 → POST /plans/recompute
  *   （再計算の結果が終了時刻を超えたら circle-alert で警告し、収まるまで保存できない）
  * - 入らなかった場所、保存 / 削除
+ * - 保存済みのとき：リンクの共有（ヘッダー）と「しおり画像を共有」（GET /plans/{id}/image の PNG。
+ *   スマホは共有シートで Instagram ストーリー等を選べる。PC はダウンロード）
  */
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 import { RouteMap } from "@/components/map";
+import { ShareButton } from "@/components/share/ShareButton";
+import { planShareText } from "@/components/share/shareLinks";
 import {
   Badge,
   Button,
@@ -186,6 +190,21 @@ export function PlanResultView({
   const originLabel = params.origin.label || "出発地";
   const destinationLabel = params.destination ? params.destination.label || "到着地" : "出発地に戻らない";
   const spotCount = result.items.filter((i) => i.type === "spot").length;
+  const shareTitle = `${formatDateJa(params.date)}のプラン`;
+  const shareText = planShareText(formatDateJa(params.date), spotCount);
+  const planPath = saved ? `/plans/${encodeURIComponent(saved.planId)}` : null;
+
+  /** 旅のしおり画像（PNG）を取得する。失敗は ShareButton がトーストにする */
+  async function fetchItineraryImage(): Promise<Blob | null> {
+    if (!planPath) return null;
+    const res = await fetch(`/api/v1${planPath}/image`, { credentials: "same-origin" });
+    if (res.status === 401) {
+      handleUnauthorized();
+      return null;
+    }
+    if (!res.ok) throw new Error("しおり画像を取得できませんでした");
+    return res.blob();
+  }
 
   return (
     <div className="flex flex-1 flex-col">
@@ -193,13 +212,22 @@ export function PlanResultView({
         title={saved ? "保存済みプラン" : "経路プラン"}
         backHref={backHref}
         actions={
-          saved ? (
-            <IconButton
-              icon="trash-2"
-              aria-label="プランを削除"
-              variant="danger"
-              onClick={() => setConfirmDelete(true)}
-            />
+          saved && planPath ? (
+            <>
+              <ShareButton
+                variant="icon"
+                label="プランを共有"
+                title={shareTitle}
+                text={shareText}
+                url={planPath}
+              />
+              <IconButton
+                icon="trash-2"
+                aria-label="プランを削除"
+                variant="danger"
+                onClick={() => setConfirmDelete(true)}
+              />
+            </>
           ) : null
         }
       />
@@ -345,17 +373,28 @@ export function PlanResultView({
           </section>
         ) : null}
 
-        {/* 保存 / 削除（F-5-7） */}
-        {saved ? (
-          <Button
-            variant="secondary"
-            leftIcon="trash-2"
-            fullWidth
-            onClick={() => setConfirmDelete(true)}
-            className="text-danger"
-          >
-            削除
-          </Button>
+        {/* 保存 / 削除（F-5-7）。保存済みはしおり画像の共有（Instagram ストーリー向け）も出す */}
+        {saved && planPath ? (
+          <div className="flex flex-col gap-2">
+            <ShareButton
+              label="しおり画像を共有"
+              title={shareTitle}
+              text={shareText}
+              url={planPath}
+              imageBlob={fetchItineraryImage}
+              imageFileName={`plan-${params.date}.png`}
+              className="w-full"
+            />
+            <Button
+              variant="secondary"
+              leftIcon="trash-2"
+              fullWidth
+              onClick={() => setConfirmDelete(true)}
+              className="text-danger"
+            >
+              削除
+            </Button>
+          </div>
         ) : (
           <div className="flex flex-col gap-2">
             {saveError ? <ErrorMessage message={saveError} /> : null}

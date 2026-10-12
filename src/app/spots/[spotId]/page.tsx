@@ -3,12 +3,15 @@ import { notFound } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/server";
 import { LIMITS } from "@/lib/domain/constants";
 import type { PostView, SpotDetail } from "@/lib/domain/types";
+import { pageOpenGraph } from "@/lib/og/metadata";
 import { getRepo } from "@/lib/repo";
 import { Badge, CategoryLabel, Icon, PageHeader, PopularityBadge, StayDurationLabel } from "@/components/ui";
 import { HourHistogram } from "@/components/spot/HourHistogram";
 import { PhotoGallery, type GalleryPhoto } from "@/components/spot/PhotoGallery";
 import { PostList } from "@/components/spot/PostList";
 import { SpotActions } from "@/components/spot/SpotActions";
+import { ShareButton } from "@/components/share/ShareButton";
+import { spotShareText } from "@/components/share/shareLinks";
 
 type Props = { params: Promise<{ spotId: string }> };
 
@@ -17,9 +20,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const repo = await getRepo();
   const spot = await repo.spots.getById(spotId);
   if (!spot) return { title: "スポットが見つかりません" };
+  const description = [spot.address, `投稿 ${spot.postCount} 件`].filter(Boolean).join(" / ");
   return {
     title: spot.name,
-    description: [spot.address, `投稿 ${spot.postCount} 件`].filter(Boolean).join(" / "),
+    description,
+    openGraph: pageOpenGraph({ title: spot.name, description, url: `/spots/${encodeURIComponent(spot.id)}` }),
   };
 }
 
@@ -57,7 +62,20 @@ export default async function SpotDetailPage({ params }: Props) {
   return (
     <div className="flex flex-1 flex-col bg-surface lg:bg-background">
       {/* 戻る：履歴があれば戻る（地図の位置は URL ハッシュで復帰。ADR-0017）、無ければ地図へ */}
-      <PageHeader title={spot.name} backFallbackHref="/" className="lg:top-[var(--header-height)]" />
+      <PageHeader
+        title={spot.name}
+        backFallbackHref="/"
+        className="lg:top-[var(--header-height)]"
+        actions={
+          <ShareButton
+            variant="icon"
+            label="このスポットを共有"
+            title={spot.name}
+            text={spotShareText(spot.name, spot.postCount)}
+            url={`/spots/${encodeURIComponent(spot.id)}`}
+          />
+        }
+      />
       <div className="mx-auto flex w-full max-w-[960px] flex-col gap-6 pb-8 lg:px-6 lg:pt-6">
         <section aria-label="写真" className="lg:rounded-card lg:border lg:border-border lg:bg-surface">
           <PhotoGallery photos={photos} spotName={spot.name} category={spot.category} />

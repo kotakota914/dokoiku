@@ -3,10 +3,13 @@
 /**
  * 共有ダイアログ（F-4-6）。未共有なら「共有URLを発行」、共有中なら URL の表示・コピー・「共有を停止」。
  * URL はブラウザの origin + /shared/{token} で組み立てる。
+ * 共有中は LINE / X などへの共有（スマホは共有シート、PC はリンクのコピー・X・LINE）も出す。
  */
 import { useState } from "react";
 import { api } from "@/lib/api/client";
 import { Button, Dialog, Icon, Input, useToast } from "@/components/ui";
+import { ShareButton, ShareOptions, useCanNativeShare } from "@/components/share/ShareButton";
+import { listShareText } from "@/components/share/shareLinks";
 import { buildShareUrl, shareTokenOf, type ShareResponse } from "./shareUrl";
 import { useListApiError } from "./useListApiError";
 
@@ -14,16 +17,30 @@ export interface ShareDialogProps {
   open: boolean;
   listId: string;
   shareToken: string | null;
+  /** 共有文言に使うリスト名と件数（無ければ URL だけを共有する） */
+  listName?: string;
+  itemCount?: number;
   onClose: () => void;
   onChange: (shareToken: string | null) => void;
 }
 
-export function ShareDialog({ open, listId, shareToken, onClose, onChange }: ShareDialogProps) {
+export function ShareDialog({
+  open,
+  listId,
+  shareToken,
+  listName,
+  itemCount,
+  onClose,
+  onChange,
+}: ShareDialogProps) {
   const toast = useToast();
   const handleError = useListApiError();
+  const nativeShare = useCanNativeShare();
   const [busy, setBusy] = useState(false);
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const url = shareToken ? buildShareUrl(origin, shareToken) : null;
+  const shareTitle = listName ?? "行きたい場所リスト";
+  const shareText = listName !== undefined ? listShareText(listName, itemCount ?? 0) : "行きたい場所リスト | 旅行どこいこう";
 
   async function issue() {
     setBusy(true);
@@ -110,6 +127,12 @@ export function ShareDialog({ open, listId, shareToken, onClose, onChange }: Sha
             <Icon name="external-link" size={16} />
             共有ページを開く
           </a>
+          {/* LINE / X などへ：スマホは共有シート、PC はダイアログ内に選択肢を並べる（ダイアログの入れ子を避ける） */}
+          {nativeShare ? (
+            <ShareButton label="LINE や X で共有" title={shareTitle} text={shareText} url={url} className="mt-1" />
+          ) : (
+            <ShareOptions title={shareTitle} text={shareText} url={url} className="mt-1" />
+          )}
         </div>
       ) : null}
     </Dialog>
