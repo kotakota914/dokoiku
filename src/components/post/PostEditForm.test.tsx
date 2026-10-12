@@ -48,7 +48,7 @@ const post: PostView = {
   id: "33333333-3333-4333-8333-333333333333",
   userId: "u1",
   spotId: "22222222-2222-4222-8222-222222222222",
-  spotName: "伏見稲荷大社",
+  spotName: "兼六園",
   comment: "朱色の鳥居",
   category: "history",
   stayDuration: "lt60",

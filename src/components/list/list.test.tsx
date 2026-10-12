@@ -60,7 +60,7 @@ function jsonResponse(body: unknown, status = 200) {
 const list: Wishlist = {
   id: "11111111-1111-4111-8111-111111111111",
   userId: "user-1",
-  name: "京都旅行",
+  name: "金沢旅行",
   shareToken: null,
   createdAt: "2026-10-01T10:00:00.000+09:00",
   itemCount: 3,
@@ -72,16 +72,16 @@ const item: WishlistItem = {
   createdAt: "2026-10-01T10:00:00.000+09:00",
   spot: {
     id: "22222222-2222-4222-8222-222222222222",
-    name: "伏見稲荷大社",
-    lat: 34.9671,
-    lng: 135.7727,
+    name: "兼六園",
+    lat: 36.5619,
+    lng: 136.6625,
     category: "history",
     postCount: 128,
     likeCount: 10,
     popularity: "very_popular",
     coverThumbUrl: null,
-    prefecture: "京都府",
-    city: "京都市",
+    prefecture: "石川県",
+    city: "金沢市",
   },
 };
 
@@ -100,7 +100,7 @@ describe("ListPicker", () => {
     const onAdded = vi.fn();
     render(wrap(<ListPicker spotId={item.spotId} open onClose={onClose} onAdded={onAdded} />));
 
-    const row = await screen.findByRole("button", { name: /京都旅行/ });
+    const row = await screen.findByRole("button", { name: /金沢旅行/ });
     expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/lists");
     expect(row.textContent).toContain("3/30");
 
@@ -122,8 +122,8 @@ describe("ListPicker", () => {
       .mockResolvedValueOnce(jsonResponse({ spotId: item.spotId, mustVisit: false }, 201));
     const onAdded = vi.fn();
     render(wrap(<ListPicker spotId={item.spotId} open onClose={() => {}} onAdded={onAdded} />));
-    fireEvent.click(await screen.findByRole("button", { name: /京都旅行/ }));
-    expect(await screen.findByText("京都旅行に追加しました")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: /金沢旅行/ }));
+    expect(await screen.findByText("金沢旅行に追加しました")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /リストを見る/ })).toHaveAttribute("href", `/lists/${list.id}`);
     expect(onAdded).toHaveBeenCalledWith(list);
   });
@@ -136,7 +136,7 @@ describe("ListPicker", () => {
       );
     const onClose = vi.fn();
     render(wrap(<ListPicker spotId={item.spotId} open onClose={onClose} />));
-    fireEvent.click(await screen.findByRole("button", { name: /京都旅行/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /金沢旅行/ }));
     expect(await screen.findByRole("alert")).toHaveTextContent("リストは30か所までです");
     expect(screen.queryByText("追加済みです")).toBeNull();
     expect(onClose).not.toHaveBeenCalled();
@@ -145,7 +145,7 @@ describe("ListPicker", () => {
   it("上限に達したリストは「上限」バッジ付きで選べない", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse([{ ...list, itemCount: LIMITS.itemsPerList }]));
     render(wrap(<ListPicker spotId={item.spotId} open onClose={() => {}} />));
-    const row = await screen.findByRole("button", { name: /京都旅行/ });
+    const row = await screen.findByRole("button", { name: /金沢旅行/ });
     expect(row).toBeDisabled();
     expect(row).toHaveTextContent("上限");
     expect(row).toHaveTextContent("30/30");
@@ -213,10 +213,7 @@ describe("ListItemRow", () => {
     expect(init.method).toBe("PATCH");
     expect(JSON.parse(String(init.body))).toEqual({ mustVisit: true });
     await waitFor(() => expect(onChange).toHaveBeenCalledWith(item.spotId, true));
-    expect(screen.getByRole("link", { name: "伏見稲荷大社" })).toHaveAttribute(
-      "href",
-      `/spots/${item.spotId}`,
-    );
+    expect(screen.getByRole("link", { name: "兼六園" })).toHaveAttribute("href", `/spots/${item.spotId}`);
   });
 
   it("API が失敗したら元に戻す", async () => {
@@ -247,7 +244,7 @@ describe("ListItemRow", () => {
     expect(screen.getByText("このスポットは削除されました")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "必ず行きたい" })).toBeNull();
     expect(screen.getByRole("button", { name: /削除されたスポットをリストから削除/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /伏見稲荷大社をリストから削除/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /兼六園をリストから削除/ })).toBeNull();
   });
 });
 

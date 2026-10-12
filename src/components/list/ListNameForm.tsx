@@ -61,7 +61,7 @@ export function ListNameForm({
               if (error) setError(null);
             }}
             maxLength={LIMITS.listNameMax}
-            placeholder="例：京都 秋の旅行"
+            placeholder="例：金沢 秋の旅行"
             aria-describedby={describedBy}
             invalid={invalid}
             autoFocus={autoFocus}

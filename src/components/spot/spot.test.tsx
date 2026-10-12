@@ -148,7 +148,7 @@ const basePost: PostView = {
   createdAt: "2026-10-01T10:00:00.000+09:00",
   updatedAt: "2026-10-01T10:00:00.000+09:00",
   author: { id: "user-1", displayName: "たろう", avatarUrl: null },
-  spotName: "清水寺",
+  spotName: "兼六園",
   images: [{ id: "img-1", fullUrl: "/f.webp", thumbUrl: "/t.webp", width: 400, height: 300, sortOrder: 0 }],
   likedByMe: false,
 };
@@ -178,6 +178,6 @@ describe("PostCard", () => {
       <PostCard post={{ ...basePost, status: "hidden" }} currentUserId="user-1" showSpotName />,
     );
     expect(container.textContent).toContain("非表示");
-    expect(container.querySelector('a[href="/spots/spot-1"]')?.textContent).toContain("清水寺");
+    expect(container.querySelector('a[href="/spots/spot-1"]')?.textContent).toContain("兼六園");
   });
 });

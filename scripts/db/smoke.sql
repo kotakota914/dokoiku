@@ -4,16 +4,18 @@
 
 \set ON_ERROR_STOP on
 
--- ---------- 1. 京都の範囲に seed のスポットが 40 件ある ----------
+-- ---------- 1. 金沢（金沢市・野々市市）の範囲に seed のスポットが全件（40 件以上）ある ----------
 do $$
 declare
   v_count int;
+  v_total int;
 begin
-  select count(*) into v_count from public.spots_in_bbox(135.55, 34.85, 135.90, 35.20);
-  if v_count <> 40 then
-    raise exception 'spots_in_bbox: 40 件のはずが % 件', v_count;
+  select count(*) into v_count from public.spots_in_bbox(136.55, 36.48, 136.75, 36.65);
+  select count(*) into v_total from public.spots;
+  if v_count <> v_total or v_count < 40 then
+    raise exception 'spots_in_bbox: seed の % 件（40 件以上）のはずが % 件', v_total, v_count;
   end if;
-  raise notice 'ok: spots_in_bbox で京都の範囲に % 件', v_count;
+  raise notice 'ok: spots_in_bbox で金沢の範囲に % 件', v_count;
 end;
 $$;
 
@@ -24,9 +26,9 @@ declare
   v_history int;
   v_heat int;
 begin
-  select count(*) into v_all from public.spots_in_bbox(135.55, 34.85, 135.90, 35.20);
-  select count(*) into v_history from public.spots_in_bbox(135.55, 34.85, 135.90, 35.20, array['history']);
-  select count(*) into v_heat from public.spots_heatmap(135.55, 34.85, 135.90, 35.20);
+  select count(*) into v_all from public.spots_in_bbox(136.55, 36.48, 136.75, 36.65);
+  select count(*) into v_history from public.spots_in_bbox(136.55, 36.48, 136.75, 36.65, array['history']);
+  select count(*) into v_heat from public.spots_heatmap(136.55, 36.48, 136.75, 36.65);
   if v_history <= 0 or v_history >= v_all then
     raise exception 'spots_in_bbox: カテゴリ絞り込みが効いていない（all=%, history=%）', v_all, v_history;
   end if;
@@ -37,22 +39,22 @@ begin
 end;
 $$;
 
--- ---------- 2. 清水寺付近 300m の近傍検索 ----------
+-- ---------- 2. 兼六園付近 300m の近傍検索 ----------
 do $$
 declare
   v_name text;
   v_distance float8;
 begin
   select name, distance_m into v_name, v_distance
-    from public.spots_nearby(34.9949, 135.7850, 300, 10)
+    from public.spots_nearby(36.5619, 136.6625, 300, 10)
    limit 1;
-  if v_name is distinct from '清水寺' then
-    raise exception 'spots_nearby: 先頭は清水寺のはずが %', coalesce(v_name, '（なし）');
+  if v_name is distinct from '兼六園' then
+    raise exception 'spots_nearby: 先頭は兼六園のはずが %', coalesce(v_name, '（なし）');
   end if;
   if v_distance > 5 then
-    raise exception 'spots_nearby: 清水寺までの距離 % m が大きすぎる', v_distance;
+    raise exception 'spots_nearby: 兼六園までの距離 % m が大きすぎる', v_distance;
   end if;
-  raise notice 'ok: spots_nearby 清水寺付近 300m の先頭は % （% m）', v_name, round(v_distance::numeric, 1);
+  raise notice 'ok: spots_nearby 兼六園付近 300m の先頭は % （% m）', v_name, round(v_distance::numeric, 1);
 end;
 $$;
 
@@ -68,15 +70,15 @@ declare
   v_total int;
   v_total_posts int;
 begin
-  select id into v_spot_id from public.spots where name = '清水寺';
+  select id into v_spot_id from public.spots where name = '兼六園';
   perform public.recompute_spot_stats(v_spot_id);
   select post_count, cover_image_id, array_length(hour_histogram, 1),
          (select sum(x) from unnest(hour_histogram) x)
     into v_post_count, v_cover, v_hist_len, v_hist_sum
     from public.spots where id = v_spot_id;
   select count(*) into v_actual from public.posts where spot_id = v_spot_id and status = 'public';
-  if v_post_count <> v_actual or v_post_count <> 3 then
-    raise exception 'recompute_spot_stats: 清水寺の post_count=% （実際 %）', v_post_count, v_actual;
+  if v_post_count <> v_actual or v_post_count < 20 then
+    raise exception 'recompute_spot_stats: 兼六園の post_count=% （実際 %、20 以上のはず）', v_post_count, v_actual;
   end if;
   if v_cover is null then
     raise exception 'recompute_spot_stats: 代表写真が設定されていない';
@@ -88,7 +90,7 @@ begin
   if v_total <> v_total_posts then
     raise exception 'recompute_spot_stats: post_count の合計 % が投稿数 % と一致しない', v_total, v_total_posts;
   end if;
-  raise notice 'ok: recompute_spot_stats 清水寺 post_count=% cover=% 合計=%', v_post_count, v_cover, v_total;
+  raise notice 'ok: recompute_spot_stats 兼六園 post_count=% cover=% 合計=%', v_post_count, v_cover, v_total;
 end;
 $$;
 
@@ -97,22 +99,26 @@ do $$
 declare
   v_count int;
 begin
-  -- 表記ゆれ（スペース・カタカナ）を吸収して清水寺が見つかる
-  select count(*) into v_count from public.spots_similar_name('きよみず寺', 34.9949, 135.7850, 50);
+  -- 表記ゆれ（スペース・カタカナ）を吸収して兼六園が見つかる
+  select count(*) into v_count from public.spots_similar_name('けんろく園', 36.5619, 136.6625, 50);
   if v_count <> 0 then
     raise exception 'spots_similar_name: ひらがな表記は漢字と一致しない想定（% 件）', v_count;
   end if;
-  select count(*) into v_count from public.spots_similar_name('清水 寺', 34.9949, 135.7850, 50);
+  select count(*) into v_count from public.spots_similar_name('兼 六 園', 36.5619, 136.6625, 50);
   if v_count <> 1 then
-    raise exception 'spots_similar_name: 「清水 寺」で 1 件のはずが % 件', v_count;
+    raise exception 'spots_similar_name: 「兼 六 園」で 1 件のはずが % 件', v_count;
   end if;
   select count(*) into v_count from public.spots_search(p_keyword => '神社', p_sort => 'popular', p_limit => 50);
-  if v_count <> 4 then
-    raise exception 'spots_search: 「神社」で 4 件のはずが % 件', v_count;
-  end if;
-  select count(*) into v_count from public.spots_search(p_city => '京都市', p_category => 'gourmet', p_sort => 'newest', p_limit => 50);
   if v_count <> 3 then
-    raise exception 'spots_search: 京都市のグルメは 3 件のはずが % 件', v_count;
+    raise exception 'spots_search: 「神社」で 3 件のはずが % 件', v_count;
+  end if;
+  select count(*) into v_count from public.spots_search(p_city => '金沢市', p_category => 'gourmet', p_sort => 'newest', p_limit => 50);
+  if v_count <> 5 then
+    raise exception 'spots_search: 金沢市のグルメは 5 件のはずが % 件', v_count;
+  end if;
+  select count(*) into v_count from public.spots_search(p_city => '野々市市', p_sort => 'popular', p_limit => 50);
+  if v_count < 6 then
+    raise exception 'spots_search: 野々市市（金沢工業大学など）は 6 件以上のはずが % 件', v_count;
   end if;
   raise notice 'ok: spots_similar_name と spots_search';
 end;
@@ -130,8 +136,8 @@ begin
     raise exception 'increment_api_usage: count=% limit=%', v_usage.count, v_usage."limit";
   end if;
   delete from public.api_usage where provider = 'nominatim';
-  select public.count_recent_posts('11111111-1111-4111-8111-111111111111', timestamptz '2026-01-01 00:00:00+09') into v_recent;
-  if v_recent <> (select count(*) from public.posts) then
+  select public.count_recent_posts('a0000000-0000-4000-8000-000000000001', timestamptz '2025-01-01 00:00:00+09') into v_recent;
+  if v_recent <> (select count(*) from public.posts where user_id = 'a0000000-0000-4000-8000-000000000001') then
     raise exception 'count_recent_posts: % 件', v_recent;
   end if;
   raise notice 'ok: increment_api_usage と count_recent_posts';
@@ -149,9 +155,9 @@ insert into public.profiles (id, display_name) values
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'RLS検証B')
 on conflict (id) do nothing;
 insert into public.posts (id, user_id, spot_id, comment, category, status) values
-  ('aaaaaaaa-0000-4000-8000-000000000001', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', (select id from public.spots where name = '清水寺'), 'Aの公開投稿', 'history', 'public'),
-  ('aaaaaaaa-0000-4000-8000-000000000002', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', (select id from public.spots where name = '清水寺'), 'Aの非表示投稿', 'history', 'hidden'),
-  ('bbbbbbbb-0000-4000-8000-000000000001', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', (select id from public.spots where name = '清水寺'), 'Bの非表示投稿', 'history', 'hidden')
+  ('aaaaaaaa-0000-4000-8000-000000000001', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', (select id from public.spots where name = '兼六園'), 'Aの公開投稿', 'history', 'public'),
+  ('aaaaaaaa-0000-4000-8000-000000000002', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', (select id from public.spots where name = '兼六園'), 'Aの非表示投稿', 'history', 'hidden'),
+  ('bbbbbbbb-0000-4000-8000-000000000001', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', (select id from public.spots where name = '兼六園'), 'Bの非表示投稿', 'history', 'hidden')
 on conflict (id) do nothing;
 
 -- A としてログインした状態
@@ -215,7 +221,7 @@ reset role;
 
 -- 検証用データを片付ける（auth.users の削除で profiles 以下は cascade）
 delete from auth.users where id in ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
-do $$ begin perform public.recompute_spot_stats((select id from public.spots where name = '清水寺')); end; $$;
+do $$ begin perform public.recompute_spot_stats((select id from public.spots where name = '兼六園')); end; $$;
 
 -- ---------- 7. Storage（0002 を流した場合のみ） ----------
 do $$

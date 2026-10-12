@@ -5,7 +5,7 @@ import { SPOTS, expect, test } from "./helpers";
 
 test.describe("スポット詳細", () => {
   test("名前・投稿数・24 本の棒グラフ・投稿カード・Google マップのリンクが出る", async ({ page }) => {
-    const spot = SPOTS.fushimiInari;
+    const spot = SPOTS.kenrokuen;
     const res = await page.goto(`/spots/${spot.id}`);
     expect(res?.status()).toBe(200);
 
@@ -36,7 +36,7 @@ test.describe("スポット詳細", () => {
   });
 
   test("未ログインで いいね を押すとログイン画面へ（戻り先付き）", async ({ page }) => {
-    const spot = SPOTS.fushimiInari;
+    const spot = SPOTS.kenrokuen;
     await page.goto(`/spots/${spot.id}`);
     const like = page.getByRole("button", { name: /いいねする/ }).first();
     await expect(like).toBeVisible();
@@ -46,26 +46,26 @@ test.describe("スポット詳細", () => {
   });
 
   test("未ログインで「行きたい場所リストに追加」を押すとログイン画面へ", async ({ page }) => {
-    const spot = SPOTS.kiyomizu;
+    const spot = SPOTS.kanazawaCastle;
     await page.goto(`/spots/${spot.id}`);
     await page.getByRole("button", { name: "行きたい場所リストに追加" }).click();
     await expect(page).toHaveURL(/\/login\?next=/);
   });
 
-  test("検索：清水 で 清水寺 が出る", async ({ page }) => {
-    const res = await page.goto("/search?q=%E6%B8%85%E6%B0%B4");
+  test("検索：金沢城 で 金沢城公園 が出る", async ({ page }) => {
+    const res = await page.goto("/search?q=%E9%87%91%E6%B2%A2%E5%9F%8E");
     expect(res?.status()).toBe(200);
     const card = page
       .getByRole("article")
-      .filter({ has: page.getByRole("heading", { name: "清水寺", exact: true }) })
+      .filter({ has: page.getByRole("heading", { name: "金沢城公園", exact: true }) })
       .first();
     await expect(card).toBeVisible();
     await expect(card).toContainText(/投稿 \d+ 件/);
     const result = card.getByRole("link", { name: "詳細を見る" });
-    await expect(result).toHaveAttribute("href", new RegExp(`/spots/${SPOTS.kiyomizu.id}`));
+    await expect(result).toHaveAttribute("href", new RegExp(`/spots/${SPOTS.kanazawaCastle.id}`));
     await result.click();
-    await expect(page).toHaveURL(new RegExp(`/spots/${SPOTS.kiyomizu.id}`));
-    await expect(page.getByRole("heading", { name: "清水寺" })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/spots/${SPOTS.kanazawaCastle.id}`));
+    await expect(page.getByRole("heading", { name: "金沢城公園" })).toBeVisible();
   });
 
   test("存在しない ID は見つからない表示", async ({ page }) => {

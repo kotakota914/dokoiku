@@ -32,28 +32,28 @@ let repo = createMemoryRepository(true, { persist: false });
 vi.mock("@/lib/repo", () => ({ getRepo: async () => repo }));
 
 const NOW = new Date("2026-10-10T03:00:00Z"); // JST 12:00
-const KIYOMIZU_ID = seedUuid("spot", 1);
+const KENROKUEN_ID = seedUuid("spot", 1);
 
-/** 自前DBの清水寺と同じ場所（座標が数 m 違い、表記ゆれあり） */
-const EXT_KIYOMIZU: NominatimPlace = {
+/** 自前DBの兼六園と同じ場所（座標が数 m 違い、表記ゆれあり） */
+const EXT_KENROKUEN: NominatimPlace = {
   place_id: 10,
   osm_type: "way",
   osm_id: 1001,
-  lat: "34.99492",
-  lon: "135.78503",
-  name: "清水寺 ",
-  display_name: "清水寺, 清水1丁目, 東山区, 京都市, 京都府, 日本",
-  address: { state: "京都府", city: "京都市", city_district: "東山区" },
+  lat: "36.56192",
+  lon: "136.66253",
+  name: "兼六園 ",
+  display_name: "兼六園, 兼六町, 金沢市, 石川県, 日本",
+  address: { state: "石川県", city: "金沢市" },
 };
 const EXT_STATION: NominatimPlace = {
   place_id: 11,
   osm_type: "node",
   osm_id: 1002,
-  lat: "34.9858",
-  lon: "135.7588",
-  name: "清水寺前バス停",
-  display_name: "清水寺前バス停, 下京区, 京都市, 京都府, 日本",
-  address: { state: "京都府", city: "京都市", city_district: "下京区" },
+  lat: "36.5780",
+  lon: "136.6478",
+  name: "兼六園シャトル バス停",
+  display_name: "兼六園シャトル バス停, 木ノ新保町, 金沢市, 石川県, 日本",
+  address: { state: "石川県", city: "金沢市" },
 };
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -91,21 +91,21 @@ describe("isSamePlace / dedupeExternal", () => {
   const db: PlaceCandidate = {
     source: "db",
     id: "x",
-    name: "清水寺",
-    lat: 34.9949,
-    lng: 135.785,
+    name: "兼六園",
+    lat: 36.5619,
+    lng: 136.6625,
     address: null,
     prefecture: null,
     city: null,
   };
   it("50m 以内かつ正規化した名前が一致なら同じ場所", () => {
     expect(
-      isSamePlace({ ...db, source: "external", name: "きよみず寺", lat: 34.99492, lng: 135.78503 }, db),
+      isSamePlace({ ...db, source: "external", name: "けんろく園", lat: 36.56192, lng: 136.66253 }, db),
     ).toBe(false);
     expect(
-      isSamePlace({ ...db, source: "external", name: "清水寺　", lat: 34.99492, lng: 135.78503 }, db),
+      isSamePlace({ ...db, source: "external", name: "兼六園　", lat: 36.56192, lng: 136.66253 }, db),
     ).toBe(true);
-    expect(isSamePlace({ ...db, source: "external", name: "清水寺", lat: 34.996, lng: 135.785 }, db)).toBe(
+    expect(isSamePlace({ ...db, source: "external", name: "兼六園", lat: 36.563, lng: 136.6625 }, db)).toBe(
       false,
     );
   });
@@ -118,10 +118,10 @@ describe("isSamePlace / dedupeExternal", () => {
 
 describe("searchPlaceCandidates", () => {
   it("自前DBの結果を先頭に、外部の結果を続けて返し、同じ場所は除く。無料枠を 1 回分数える", async () => {
-    const fetchImpl = vi.fn<FetchLike>(async () => jsonResponse([EXT_KIYOMIZU, EXT_STATION]));
+    const fetchImpl = vi.fn<FetchLike>(async () => jsonResponse([EXT_KENROKUEN, EXT_STATION]));
     const res = await searchPlaceCandidates(
       repo,
-      { q: "清水寺" },
+      { q: "兼六園" },
       { now: NOW, fetchImpl, nominatimEnabled: true },
     );
     expect(res.externalUnavailable).toBe(false);
@@ -130,7 +130,7 @@ describe("searchPlaceCandidates", () => {
 
     const db = res.results.filter((r) => r.source === "db");
     const ext = res.results.filter((r) => r.source === "external");
-    expect(db[0]).toMatchObject({ source: "db", id: KIYOMIZU_ID, name: "清水寺", prefecture: "京都府" });
+    expect(db[0]).toMatchObject({ source: "db", id: KENROKUEN_ID, name: "兼六園", prefecture: "石川県" });
     expect(res.results.indexOf(db[0])).toBeLessThan(res.results.indexOf(ext[0]));
     expect(ext.map((e) => e.id)).toEqual(["node:1002"]);
     expect(await usageCount()).toBe(1);
@@ -140,43 +140,43 @@ describe("searchPlaceCandidates", () => {
     const fetchImpl = vi.fn<FetchLike>(async () => jsonResponse([]));
     const res = await searchPlaceCandidates(
       repo,
-      { q: "寺" },
+      { q: "神社" },
       { now: NOW, fetchImpl, nominatimEnabled: true },
     );
     const db = res.results.filter((r) => r.source === "db");
     expect(db.length).toBeGreaterThan(1);
     expect(db.length).toBeLessThanOrEqual(10);
-    const spot = await repo.spots.getById(KIYOMIZU_ID);
+    const spot = await repo.spots.getById(KENROKUEN_ID);
     expect(toDbCandidate(spot!)).toEqual({
       source: "db",
-      id: KIYOMIZU_ID,
-      name: "清水寺",
-      lat: 34.9949,
-      lng: 135.785,
+      id: KENROKUEN_ID,
+      name: "兼六園",
+      lat: 36.5619,
+      lng: 136.6625,
       address: null,
-      prefecture: "京都府",
-      city: "京都市東山区",
+      prefecture: "石川県",
+      city: "金沢市",
     });
   });
 
   it("現在地があれば Nominatim の結果を近い順に並べる", async () => {
     const fetchImpl = vi.fn<FetchLike>(async () =>
-      jsonResponse([EXT_STATION, { ...EXT_KIYOMIZU, name: "清水寺本堂" }]),
+      jsonResponse([EXT_STATION, { ...EXT_KENROKUEN, name: "兼六園 霞ヶ池" }]),
     );
     const res = await searchPlaceCandidates(
       repo,
-      { q: "清水寺", lat: 34.9949, lng: 135.785 },
+      { q: "兼六園", lat: 36.5619, lng: 136.6625 },
       { now: NOW, fetchImpl, nominatimEnabled: true },
     );
     const ext = res.results.filter((r) => r.source === "external");
-    expect(ext.map((e) => e.name)).toEqual(["清水寺本堂", "清水寺前バス停"]);
+    expect(ext.map((e) => e.name)).toEqual(["兼六園 霞ヶ池", "兼六園シャトル バス停"]);
   });
 
   it("外部が失敗（UPSTREAM）したら externalUnavailable: true で自前DBの結果だけ返す（例外にしない）", async () => {
     const fetchImpl = vi.fn<FetchLike>(async () => jsonResponse({ error: "down" }, 503));
     const res = await searchPlaceCandidates(
       repo,
-      { q: "清水寺" },
+      { q: "兼六園" },
       { now: NOW, fetchImpl, nominatimEnabled: true },
     );
     expect(res.externalUnavailable).toBe(true);
@@ -193,7 +193,7 @@ describe("searchPlaceCandidates", () => {
     const fetchImpl = vi.fn<FetchLike>(async () => jsonResponse([EXT_STATION]));
     const res = await searchPlaceCandidates(
       repo,
-      { q: "清水寺" },
+      { q: "兼六園" },
       { now: NOW, fetchImpl, nominatimEnabled: true },
     );
     expect(res.externalUnavailable).toBe(true);
@@ -209,7 +209,7 @@ describe("searchPlaceCandidates", () => {
     const fetchImpl = vi.fn<FetchLike>(async () => jsonResponse([EXT_STATION]));
     const res = await searchPlaceCandidates(
       repo,
-      { q: "清水寺" },
+      { q: "兼六園" },
       { now: NOW, fetchImpl, nominatimEnabled: true },
     );
     expect(res.externalUnavailable).toBe(true);
@@ -222,7 +222,7 @@ describe("searchPlaceCandidates", () => {
     const fetchImpl = vi.fn<FetchLike>(async () => jsonResponse([EXT_STATION]));
     const res = await searchPlaceCandidates(
       repo,
-      { q: "清水寺" },
+      { q: "兼六園" },
       { now: NOW, fetchImpl, nominatimEnabled: false },
     );
     expect(res.externalUnavailable).toBe(true);
@@ -234,14 +234,14 @@ describe("searchPlaceCandidates", () => {
     const fetchImpl = vi.fn<FetchLike>(async () => jsonResponse([EXT_STATION]));
     const first = await searchPlaceCandidates(
       repo,
-      { q: "清水寺" },
+      { q: "兼六園" },
       { now: NOW, fetchImpl, nominatimEnabled: true },
     );
     expect(first.externalUnavailable).toBe(false);
 
     const soon = new Date(NOW.getTime() + 100);
     await expect(
-      searchPlaceCandidates(repo, { q: "清水寺" }, { now: soon, fetchImpl, nominatimEnabled: true }),
+      searchPlaceCandidates(repo, { q: "兼六園" }, { now: soon, fetchImpl, nominatimEnabled: true }),
     ).rejects.toMatchObject({ code: "RATE_LIMITED", status: 429 });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(await usageCount()).toBe(1);
@@ -250,7 +250,7 @@ describe("searchPlaceCandidates", () => {
     const later = new Date(NOW.getTime() + 1000);
     const third = await searchPlaceCandidates(
       repo,
-      { q: "清水寺" },
+      { q: "兼六園" },
       { now: later, fetchImpl, nominatimEnabled: true },
     );
     expect(third.externalUnavailable).toBe(false);
@@ -265,7 +265,7 @@ describe("GET /places/search", () => {
 
   it("未ログインは 401", async () => {
     const { GET } = await import("@/app/api/v1/places/search/route");
-    const res = await GET(get("/places/search?q=清水寺"), ctx);
+    const res = await GET(get("/places/search?q=兼六園"), ctx);
     expect(res.status).toBe(401);
   });
 
@@ -283,12 +283,12 @@ describe("GET /places/search", () => {
     authState.userId = SEED_USER_IDS.userA;
     vi.stubEnv("NOMINATIM_ENABLED", "false");
     try {
-      const res = await GET(get("/places/search?q=清水寺"), ctx);
+      const res = await GET(get("/places/search?q=兼六園"), ctx);
       expect(res.status).toBe(200);
       expect(res.headers.get("Cache-Control")).toBe("no-store");
       const body = await res.json();
       expect(body.externalUnavailable).toBe(true);
-      expect(body.results[0]).toMatchObject({ source: "db", name: "清水寺" });
+      expect(body.results[0]).toMatchObject({ source: "db", name: "兼六園" });
       expect(guardedFetch).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllEnvs();

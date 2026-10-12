@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import { mapModeForZoom } from "@/lib/domain/constants";
 import { buildSpotsPath, zoomForRequest } from "./useViewportSpots";
 
-const bbox = { minLng: 135.7, minLat: 34.9, maxLng: 135.8, maxLat: 35.0 };
+const bbox = { minLng: 136.6, minLat: 36.5, maxLng: 136.7, maxLat: 36.6 };
 
 describe("buildSpotsPath", () => {
   it("bbox と整数ズームを query にし、カテゴリがあれば category を付ける", () => {
     expect(buildSpotsPath({ bbox, zoom: 14 }, [])).toBe(
-      "/spots?bbox=135.70000%2C34.90000%2C135.80000%2C35.00000&zoom=14",
+      "/spots?bbox=136.60000%2C36.50000%2C136.70000%2C36.60000&zoom=14",
     );
     expect(buildSpotsPath({ bbox, zoom: 14 }, ["gourmet", "nature"])).toContain("&category=gourmet%2Cnature");
   });

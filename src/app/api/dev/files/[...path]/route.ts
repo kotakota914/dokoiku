@@ -3,6 +3,7 @@
  * memory モード専用の画像配信（Supabase Storage の公開 URL の代わり）。
  * - <dataDir>/uploads/<path> があればそのまま返す。
  * - "seed/<spotId>/<n>.svg" は初期データ用のプレースホルダー SVG を生成して返す。
+ * - "seed/photos/**"（初期データの実写真）は public/ の静的ファイルとして配信するのでここは通らない。
  */
 import { CATEGORY_LABELS, type Category } from "@/lib/domain/constants";
 import { getDataBackend } from "@/lib/config";
@@ -69,7 +70,7 @@ export const GET = route<{ path: string[] }>(async (_req, { params }) => {
 
   const repo = getMemoryRepository();
 
-  if (segments[0] === "seed" && segments.length === 3 && ext === "svg") {
+  if (segments[0] === "seed" && segments[1] !== "photos" && segments.length === 3 && ext === "svg") {
     const spotId = segments[1];
     const detail = await repo.spots.getById(spotId);
     const info = detail ? { name: detail.name, category: detail.category } : seedSpotInfo(spotId);

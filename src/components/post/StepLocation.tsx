@@ -337,7 +337,7 @@ export function StepLocation({
                   id={id}
                   type="search"
                   value={query}
-                  placeholder="例：伏見稲荷大社"
+                  placeholder="例：兼六園"
                   maxLength={100}
                   enterKeyHint="search"
                   autoComplete="off"

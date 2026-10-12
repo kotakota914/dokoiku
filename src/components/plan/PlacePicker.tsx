@@ -152,7 +152,7 @@ export function PlacePicker({ label, value, onChange, error, disabled, onUnautho
             <div className="flex gap-2">
               <Input
                 aria-label={`${label}を検索`}
-                placeholder="例：京都駅"
+                placeholder="例：金沢駅"
                 value={query}
                 maxLength={100}
                 disabled={disabled}

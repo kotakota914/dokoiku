@@ -37,11 +37,11 @@ vi.mock("server-only", () => ({}));
 
 const USER_A = SEED_USER_IDS.userA;
 const USER_B = SEED_USER_IDS.userB;
-/** 清水寺・伏見稲荷大社・金閣寺（seed の 1〜3 番目） */
+/** 兼六園・金沢城公園・ひがし茶屋街（seed の 1〜3 番目） */
 const SPOTS = [seedUuid("spot", 1), seedUuid("spot", 2), seedUuid("spot", 3)];
-const KYOTO_STATION = { lat: 34.9858, lng: 135.7588, label: "京都駅" };
+const KANAZAWA_STATION = { lat: 36.578, lng: 136.6478, label: "金沢駅" };
 const DATE = "2026-11-03";
-/** 外部 API を使わない（直線距離の概算）。徒歩だと金閣寺が遠く 1 日に入らないので車で固定する */
+/** 外部 API を使わない（直線距離の概算）。移動手段は車で固定する */
 const FALLBACK = { routingEnabled: false } as const;
 
 let repo = createMemoryRepository(true, { persist: false });
@@ -70,7 +70,7 @@ function params(listId: string, overrides: Partial<PlanComputeInput> = {}): Plan
   return planComputeSchema.parse({
     listId,
     spotIds: SPOTS,
-    origin: KYOTO_STATION,
+    origin: KANAZAWA_STATION,
     destination: null,
     date: DATE,
     startTime: "09:00",
@@ -162,18 +162,23 @@ describe("computePlan（ORS 未設定：直線距離の概算）", () => {
 
     // 最初の区間は出発地からの概算移動時間
     const first = await repo.spots.getById(spots[0].spotId);
-    const leg = estimateTravel(KYOTO_STATION, first!, "driving");
+    const leg = estimateTravel(KANAZAWA_STATION, first!, "driving");
     expect(hhmmToMinutes(spots[0].arrive)).toBe(hhmmToMinutes("09:00") + Math.ceil(leg.durationSec / 60));
 
     // 経路形状は出発地＋3 か所を結ぶ直線
     expect(result.geometry?.type).toBe("LineString");
     expect(result.geometry?.coordinates).toHaveLength(4);
-    expect(result.geometry?.coordinates[0]).toEqual([KYOTO_STATION.lng, KYOTO_STATION.lat]);
+    expect(result.geometry?.coordinates[0]).toEqual([KANAZAWA_STATION.lng, KANAZAWA_STATION.lat]);
   });
 
   it("到着地があれば最後に到着地への移動が入り、endAt は到着地に着く時刻", async () => {
     const listId = await listWith(USER_A, SPOTS);
-    const result = await computePlan(repo, USER_A, params(listId, { destination: KYOTO_STATION }), FALLBACK);
+    const result = await computePlan(
+      repo,
+      USER_A,
+      params(listId, { destination: KANAZAWA_STATION }),
+      FALLBACK,
+    );
     const spots = spotItems(result.items);
     expect(spots).toHaveLength(3);
     const last = spots[2];
@@ -188,7 +193,7 @@ describe("computePlan（ORS 未設定：直線距離の概算）", () => {
     await setWishlistItemMustVisit(repo, USER_A, listId, must, { mustVisit: true });
     // 「必ず行きたい」1 か所だけがちょうど入る終了時刻にする
     const spot = (await repo.spots.getById(must))!;
-    const travelMin = Math.ceil(estimateTravel(KYOTO_STATION, spot, "driving").durationSec / 60);
+    const travelMin = Math.ceil(estimateTravel(KANAZAWA_STATION, spot, "driving").durationSec / 60);
     const stayMin = computeStayMinutes(spot, [], "normal");
     const endTime = minutesToHHMM(hhmmToMinutes("09:00") + travelMin + stayMin + 5);
 
@@ -244,8 +249,8 @@ describe("computePlan（ORS 未設定：直線距離の概算）", () => {
   it("投稿が 0 件のスポットは deleted として外し、残りで計算する", async () => {
     const empty = await repo.spots.create({
       name: "投稿のないスポット",
-      lat: 35.0,
-      lng: 135.76,
+      lat: 36.55,
+      lng: 136.64,
       category: "other",
       source: "gps",
       createdBy: USER_A,
@@ -264,8 +269,8 @@ describe("computePlan（ORS 未設定：直線距離の概算）", () => {
   it("対象がすべて削除済みなら外部 API を呼ばず空の結果", async () => {
     const empty = await repo.spots.create({
       name: "空",
-      lat: 35.0,
-      lng: 135.76,
+      lat: 36.55,
+      lng: 136.64,
       category: "other",
       source: "gps",
       createdBy: USER_A,
@@ -380,7 +385,7 @@ describe("recomputePlan（F-5-6：外部 API を呼ばない）", () => {
     const listId = await listWith(USER_A, SPOTS);
     const order = [SPOTS[2], SPOTS[0], SPOTS[1]];
     const input = planRecomputeSchema.parse({
-      params: params(listId, { destination: KYOTO_STATION }),
+      params: params(listId, { destination: KANAZAWA_STATION }),
       travelMatrixId: "tm_driving_0123456789abcdef",
       order,
       stayOverrides: { [SPOTS[0]]: 15 },
@@ -397,7 +402,7 @@ describe("recomputePlan（F-5-6：外部 API を呼ばない）", () => {
     // キャッシュが無いので概算、経路形状は直線（出発地 + 3 か所 + 到着地）
     expect(result.estimated).toBe(true);
     expect(result.geometry?.coordinates).toHaveLength(5);
-    expect(result.geometry?.coordinates[4]).toEqual([KYOTO_STATION.lng, KYOTO_STATION.lat]);
+    expect(result.geometry?.coordinates[4]).toEqual([KANAZAWA_STATION.lng, KANAZAWA_STATION.lat]);
     expect(hhmmToMinutes(result.endAt)).toBe(
       hhmmToMinutes(spots[2].depart) + (spots[2].travelMinToNext ?? 0),
     );
@@ -474,7 +479,7 @@ describe("savePlan / getPlan / deletePlan（F-5-7）", () => {
     // 出発地・到着地の座標は約 100m（小数 3 桁）に丸めて保存する（現在地を保存しない）
     const saved = coarsenSavedPlan(p, result);
     expect(plan.params).toEqual(saved.params);
-    expect(plan.params.origin).toEqual({ ...KYOTO_STATION, lat: 34.986, lng: 135.759 });
+    expect(plan.params.origin).toEqual({ ...KANAZAWA_STATION, lat: 36.578, lng: 136.648 });
     expect(plan.result).toEqual(saved.result);
     expect(plan.result.items).toEqual(result.items);
 
@@ -494,8 +499,8 @@ describe("savePlan / getPlan / deletePlan（F-5-7）", () => {
 
   it("出発地・到着地（現在地）の座標は小数 3 桁に丸めて保存し、経路形状の両端も同じ精度にする（13章）", async () => {
     const listId = await listWith(USER_A, SPOTS);
-    const origin = { lat: 34.98576543, lng: 135.75881234, label: "現在地" };
-    const destination = { lat: 35.01234567, lng: 135.76812345, label: "現在地" };
+    const origin = { lat: 36.57876543, lng: 136.64781234, label: "現在地" };
+    const destination = { lat: 36.56234567, lng: 136.66212345, label: "現在地" };
     const p = params(listId, { origin, destination });
     const result = await computePlan(repo, USER_A, p, FALLBACK);
     // 直線の経路形状は出発地・到着地そのもので始まり終わる
@@ -503,17 +508,17 @@ describe("savePlan / getPlan / deletePlan（F-5-7）", () => {
     expect(result.geometry?.coordinates.at(-1)).toEqual([destination.lng, destination.lat]);
 
     const plan = await savePlan(repo, USER_A, planSaveSchema.parse({ params: p, result }));
-    expect(plan.params.origin).toEqual({ lat: 34.986, lng: 135.759, label: "現在地" });
-    expect(plan.params.destination).toEqual({ lat: 35.012, lng: 135.768, label: "現在地" });
-    expect(roundCoordinate(34.98576543)).toBe(34.986);
+    expect(plan.params.origin).toEqual({ lat: 36.579, lng: 136.648, label: "現在地" });
+    expect(plan.params.destination).toEqual({ lat: 36.562, lng: 136.662, label: "現在地" });
+    expect(roundCoordinate(36.57876543)).toBe(36.579);
     const coords = plan.result.geometry!.coordinates;
-    expect(coords[0]).toEqual([135.759, 34.986]);
-    expect(coords.at(-1)).toEqual([135.768, 35.012]);
+    expect(coords[0]).toEqual([136.648, 36.579]);
+    expect(coords.at(-1)).toEqual([136.662, 36.562]);
     // 途中の点（スポットの座標）はそのまま
     expect(coords.slice(1, -1)).toEqual(result.geometry!.coordinates.slice(1, -1));
     expect(coords).toHaveLength(result.geometry!.coordinates.length);
     expect(plan.result.items).toEqual(result.items);
-    expect((await getPlan(repo, USER_A, plan.id)).params.origin.lat).toBe(34.986);
+    expect((await getPlan(repo, USER_A, plan.id)).params.origin.lat).toBe(36.579);
 
     // 到着地が無ければ末尾（最後のスポット）は丸めない
     const p2 = params(listId, { origin, destination: null });
@@ -521,7 +526,7 @@ describe("savePlan / getPlan / deletePlan（F-5-7）", () => {
     const plan2 = await savePlan(repo, USER_A, planSaveSchema.parse({ params: p2, result: r2 }));
     expect(plan2.params.destination).toBeNull();
     expect(plan2.result.geometry!.coordinates.at(-1)).toEqual(r2.geometry!.coordinates.at(-1));
-    expect(plan2.result.geometry!.coordinates[0]).toEqual([135.759, 34.986]);
+    expect(plan2.result.geometry!.coordinates[0]).toEqual([136.648, 36.579]);
   });
 
   it("他人のリストへの保存は 403、存在しないリストは 404", async () => {
@@ -545,10 +550,10 @@ describe("savePlan / getPlan / deletePlan（F-5-7）", () => {
     expect(planSaveSchema.safeParse({ params: p, result: badReason }).success).toBe(false);
     const hugeGeometry = {
       ...result,
-      geometry: { type: "LineString", coordinates: Array.from({ length: 5001 }, () => [135.7, 35.0]) },
+      geometry: { type: "LineString", coordinates: Array.from({ length: 5001 }, () => [136.65, 36.56]) },
     };
     expect(planSaveSchema.safeParse({ params: p, result: hugeGeometry }).success).toBe(false);
-    const badCoordinate = { ...result, geometry: { type: "LineString", coordinates: [[200, 35.0]] } };
+    const badCoordinate = { ...result, geometry: { type: "LineString", coordinates: [[200, 36.56]] } };
     expect(planSaveSchema.safeParse({ params: p, result: badCoordinate }).success).toBe(false);
     const tooMany = {
       ...result,

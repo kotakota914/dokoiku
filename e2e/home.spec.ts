@@ -16,11 +16,11 @@ test.describe("ホーム（地図）", () => {
   });
 
   test("ハッシュの位置で開くと写真ピンが出て、タップで要約と詳細へ遷移できる", async ({ page }) => {
-    const spot = SPOTS.fushimiInari;
+    const spot = SPOTS.kenrokuen;
     await page.goto(`/#14/${spot.lat}/${spot.lng}`);
     const pin = pinLocator(page, spot.name);
     await expect(pin).toBeVisible();
-    await expect(pin).toHaveAttribute("aria-label", /伏見稲荷大社（投稿\d+件）/);
+    await expect(pin).toHaveAttribute("aria-label", /兼六園（投稿\d+件）/);
 
     await pin.click();
     // スマホはボトムシート（dialog の名前がスポット名）、PC は左パネル（見出しにスポット名）。
@@ -41,7 +41,7 @@ test.describe("ホーム（地図）", () => {
   });
 
   test("詳細の「戻る」で地図に戻ると、URL ハッシュ（地図の位置）が保たれる（ADR-0017）", async ({ page }) => {
-    const spot = SPOTS.fushimiInari;
+    const spot = SPOTS.kenrokuen;
     await page.goto(`/#14/${spot.lat}/${spot.lng}`);
     const pin = pinLocator(page, spot.name);
     await expect(pin).toBeVisible();
@@ -53,14 +53,14 @@ test.describe("ホーム（地図）", () => {
     await expect(page).toHaveURL(new RegExp(`/spots/${spot.id}$`));
 
     await page.getByRole("button", { name: "戻る", exact: true }).click();
-    await expect(page).toHaveURL(/\/#14\/34\.967/);
+    await expect(page).toHaveURL(/\/#14\/36\.56/);
     await expect(page.locator(MAP)).toBeVisible();
     await expect(pinLocator(page, spot.name)).toBeVisible();
   });
 
   test("カテゴリで絞り込むとピンの数が変わる", async ({ page }) => {
-    // 河原町周辺：グルメ・歴史・写真映え・その他が混在する
-    await page.goto("/#14/35.0035/135.7705");
+    // 香林坊・片町周辺：グルメ・歴史・写真映え・自然・その他が混在する
+    await page.goto("/#14/36.561/136.6545");
     const pins = pinLocator(page);
     await expect(pins.first()).toBeVisible();
     await expect.poll(() => pins.count()).toBeGreaterThan(3);
@@ -84,7 +84,7 @@ test.describe("ホーム（地図）", () => {
     const responsePromise = page.waitForResponse(
       (res) => res.url().includes("/api/v1/spots?") && res.request().method() === "GET",
     );
-    await page.goto("/#6/35.0/135.75");
+    await page.goto("/#6/36.56/136.65");
     const res = await responsePromise;
     const body = (await res.json()) as { mode: string; points?: unknown[] };
     expect(body.mode).toBe("heatmap");

@@ -153,7 +153,7 @@ export function SearchView({ initialQuery, initialResults, initialError = null }
               type="search"
               value={form.q}
               onChange={(e) => setForm((f) => ({ ...f, q: e.target.value }))}
-              placeholder="例：伏見稲荷"
+              placeholder="例：兼六園"
               maxLength={100}
               enterKeyHint="search"
             />
@@ -178,7 +178,7 @@ export function SearchView({ initialQuery, initialResults, initialError = null }
                 id={id}
                 value={form.city}
                 onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
-                placeholder="例：京都市"
+                placeholder="例：金沢市"
                 maxLength={30}
               />
             )}

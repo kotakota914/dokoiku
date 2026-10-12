@@ -8,16 +8,16 @@ import { SpotPeekCard, newPostHref, spotDetailHref } from "./SpotPeekCard";
 
 const spot: SpotSummary = {
   id: "spot-1",
-  name: "伏見稲荷大社",
-  lat: 34.9671,
-  lng: 135.7727,
+  name: "兼六園",
+  lat: 36.5619,
+  lng: 136.6625,
   category: "history",
   postCount: 128,
   likeCount: 10,
   popularity: "very_popular",
   coverThumbUrl: null,
-  prefecture: "京都府",
-  city: "京都市",
+  prefecture: "石川県",
+  city: "金沢市",
 };
 
 afterEach(() => cleanup());
@@ -25,11 +25,11 @@ afterEach(() => cleanup());
 describe("SpotPeekCard", () => {
   it("名前・投稿数・人気度・カテゴリを表示する", () => {
     render(<SpotPeekCard spot={spot} onAddToList={() => {}} />);
-    expect(screen.getByRole("heading", { name: "伏見稲荷大社" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "兼六園" })).toBeInTheDocument();
     expect(screen.getByText("投稿 128件")).toBeInTheDocument();
     expect(screen.getByText("大人気")).toBeInTheDocument();
     expect(screen.getByText("歴史・文化")).toBeInTheDocument();
-    expect(screen.getByText("京都府 京都市")).toBeInTheDocument();
+    expect(screen.getByText("石川県 金沢市")).toBeInTheDocument();
   });
 
   it("「詳細を見る」と「このスポットに投稿」のリンク先が正しい", () => {
@@ -59,11 +59,11 @@ describe("SpotPeekCard", () => {
 
   it("hideName のとき見出しを出さない（シートの title と重複させない）", () => {
     render(<SpotPeekCard spot={spot} onAddToList={() => {}} hideName />);
-    expect(screen.queryByRole("heading", { name: "伏見稲荷大社" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "兼六園" })).toBeNull();
   });
 
   it("写真が無いときはカテゴリのアイコンで代替表示する", () => {
     render(<SpotPeekCard spot={spot} onAddToList={() => {}} />);
-    expect(screen.getByRole("img", { name: "伏見稲荷大社の代表写真" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "兼六園の代表写真" })).toBeInTheDocument();
   });
 });

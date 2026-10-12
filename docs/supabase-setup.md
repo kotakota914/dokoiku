@@ -6,7 +6,7 @@
 
 - `supabase/migrations/0001_init.sql`：テーブル、インデックス、トリガー、RLS、RPC 関数
 - `supabase/migrations/0002_storage.sql`：Storage バケット `post-images` と読み取り policy
-- `supabase/seed.sql`：京都市内 40 スポットと投稿のサンプル
+- `supabase/seed.sql`：金沢市・野々市市 44 スポットと投稿のサンプル（`node scripts/seed/generate-seed-sql.mjs` で `seed-data/kanazawa/spots.json` から生成）
 - `scripts/db/validate-migrations.sh`：ローカル PostgreSQL で migration と seed を検証（`npm run db:validate`）
 - `src/lib/repo/supabase/`：Supabase 実装の Repository
 

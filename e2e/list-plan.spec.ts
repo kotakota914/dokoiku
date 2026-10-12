@@ -4,7 +4,7 @@
 import type { Page } from "@playwright/test";
 import { SEED_USERS, SPOTS, devLogin, expect, expectToast, test } from "./helpers";
 
-const LIST_NAME = "E2E 京都";
+const LIST_NAME = "E2E 金沢";
 
 /** 前回の実行で残った同名リストを消す（同じサーバーで繰り返し実行できるように） */
 async function deleteListsNamed(page: Page, name: string): Promise<void> {
@@ -24,12 +24,12 @@ test.describe("リストと経路作成", () => {
   test("リストに 3 件追加 → 経路を作成 → 並び替え → 保存 → 削除", async ({ page, context }) => {
     test.setTimeout(150_000);
     await context.grantPermissions(["geolocation"]);
-    await context.setGeolocation({ latitude: 34.9858, longitude: 135.7588 });
+    await context.setGeolocation({ latitude: 36.578, longitude: 136.6478 });
     await devLogin(page, SEED_USERS.userB.id);
     await deleteListsNamed(page, LIST_NAME);
 
-    // 1) 伏見稲荷大社：新しいリストを作って追加
-    await page.goto(`/spots/${SPOTS.fushimiInari.id}`);
+    // 1) 兼六園：新しいリストを作って追加
+    await page.goto(`/spots/${SPOTS.kenrokuen.id}`);
     await page.getByRole("button", { name: "行きたい場所リストに追加" }).click();
     const picker = page.getByRole("dialog", { name: "リストに追加" });
     await expect(picker).toBeVisible();
@@ -39,8 +39,8 @@ test.describe("リストと経路作成", () => {
     await expectToast(page, `${LIST_NAME}に追加しました`);
     await expect(picker).toBeHidden();
 
-    // 2) 金閣寺・清水寺：既存リストへ追加
-    for (const spot of [SPOTS.kinkakuji, SPOTS.kiyomizu]) {
+    // 2) ひがし茶屋街・金沢城公園：既存リストへ追加
+    for (const spot of [SPOTS.higashiChaya, SPOTS.kanazawaCastle]) {
       await page.goto(`/spots/${spot.id}`);
       await page.getByRole("button", { name: "行きたい場所リストに追加" }).click();
       const dialog = page.getByRole("dialog", { name: "リストに追加" });
@@ -61,36 +61,36 @@ test.describe("リストと経路作成", () => {
     await expect(page.getByRole("heading", { name: LIST_NAME })).toBeVisible();
     const items = page.getByRole("list", { name: "リスト内のスポット" }).getByRole("listitem");
     await expect(items).toHaveCount(3);
-    for (const spot of [SPOTS.fushimiInari, SPOTS.kinkakuji, SPOTS.kiyomizu]) {
+    for (const spot of [SPOTS.kenrokuen, SPOTS.higashiChaya, SPOTS.kanazawaCastle]) {
       await expect(items.filter({ hasText: spot.name })).toHaveCount(1);
     }
 
     // 「必ず行きたい」トグル
-    const kiyomizuRow = items.filter({ hasText: SPOTS.kiyomizu.name });
-    const star = kiyomizuRow.getByRole("button", { name: "必ず行きたい" });
+    const castleRow = items.filter({ hasText: SPOTS.kanazawaCastle.name });
+    const star = castleRow.getByRole("button", { name: "必ず行きたい" });
     await expect(star).toHaveAttribute("aria-pressed", "false");
     await star.click();
     await expect(star).toHaveAttribute("aria-pressed", "true");
-    await expect(kiyomizuRow.getByText("必ず行きたい", { exact: true })).toBeVisible();
+    await expect(castleRow.getByText("必ず行きたい", { exact: true })).toBeVisible();
 
     // 4) 経路作成フォーム
     await page.getByRole("link", { name: "経路を作成" }).click();
     await expect(page).toHaveURL(new RegExp(`/lists/${listId}/plan$`));
     await expect(page.getByRole("heading", { name: "経路作成" })).toBeVisible();
     await expect(page.getByText("3 / 10か所")).toBeVisible();
-    await expect(page.getByRole("checkbox", { name: new RegExp(SPOTS.kiyomizu.name) })).toBeChecked();
+    await expect(page.getByRole("checkbox", { name: new RegExp(SPOTS.kanazawaCastle.name) })).toBeChecked();
 
-    // 出発地：スポット名で検索 → 京都駅ビル
+    // 出発地：スポット名で検索 → 金沢駅 鼓門
     await page.getByRole("radio", { name: "スポット名で検索" }).click();
     const originInput = page.getByRole("textbox", { name: "出発地を検索" });
-    await originInput.fill("京都駅");
+    await originInput.fill("金沢駅");
     await page.getByRole("button", { name: "検索" }).click();
     await expect(page.getByText("外部の場所検索は利用できません", { exact: false })).toBeVisible();
     await page
       .getByRole("list", { name: "検索結果" })
-      .getByRole("button", { name: /京都駅ビル/ })
+      .getByRole("button", { name: /金沢駅 鼓門/ })
       .click();
-    await expect(page.getByText("京都駅ビル").first()).toBeVisible();
+    await expect(page.getByText("金沢駅 鼓門").first()).toBeVisible();
 
     // 移動手段：車
     await page.getByRole("radio", { name: "車" }).click();
@@ -108,7 +108,7 @@ test.describe("リストと経路作成", () => {
     await expect(page.getByRole("heading", { name: "経路プラン" })).toBeVisible();
     await expect(page.getByText("移動時間は概算です")).toBeVisible();
     await expect(page.getByText("車", { exact: true })).toBeVisible();
-    await expect(page.getByText("京都駅ビル").first()).toBeVisible();
+    await expect(page.getByText("金沢駅 鼓門").first()).toBeVisible();
     await expect(page.getByRole("heading", { name: "タイムライン" })).toBeVisible();
     const visits = page.getByRole("list", { name: "訪問順" });
     await expect(visits).toBeVisible();

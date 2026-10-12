@@ -7,9 +7,10 @@ import { LIMITS, STAY_DURATION_MINUTES } from "@/lib/domain/constants";
 import { haversineM, normalizeName } from "@/lib/utils/geo";
 import { jstHour } from "@/lib/utils/time";
 import { buildSeedData, createMemoryRepository, SEED_USER_IDS, type MemoryRepository } from "./index";
+import { seedSpotInfo, seedUuid, SPOT_SEEDS, withPhotoCredit } from "./seed";
 
-/** 京都市全体を含む範囲 */
-const KYOTO_BBOX = { minLng: 135.6, minLat: 34.85, maxLng: 135.9, maxLat: 35.15 };
+/** 金沢市・野々市市を含む範囲 */
+const KANAZAWA_BBOX = { minLng: 136.55, minLat: 36.48, maxLng: 136.75, maxLat: 36.65 };
 
 const IMG = (n: number) => ({
   fullPath: `seed/test/${n}.svg`,
@@ -55,81 +56,111 @@ describe("seed", () => {
     expect(new Set(a.spots.map((s) => s.category)).size).toBe(5);
     expect(new Set(a.posts.map((p) => p.userId)).size).toBe(3);
     expect(a.posts.some((p) => /\p{Extended_Pictographic}/u.test(p.comment))).toBe(false);
-    expect(a.posts.every((p) => p.createdAt >= "2026-04" && p.createdAt < "2026-11")).toBe(true);
+    expect(a.posts.every((p) => p.createdAt >= "2025-11" && p.createdAt < "2026-10-10")).toBe(true);
     expect(a.likes.length).toBeGreaterThan(0);
-    expect(a.images.every((i) => i.fullPath.startsWith("seed/") && i.thumbPath.endsWith("_t.svg"))).toBe(
-      true,
-    );
+    expect(
+      a.images.every(
+        (i) =>
+          i.fullPath.startsWith("seed/") &&
+          /_t\.(svg|webp)$/.test(i.thumbPath) &&
+          i.width > 0 &&
+          i.height > 0,
+      ),
+    ).toBe(true);
+    expect(a.posts.every((p) => [...p.comment].length <= 150)).toBe(true);
+    // 金沢工業大学の学内スポットを含む
+    expect(a.spots.filter((s) => s.name.startsWith("金沢工業大学")).length).toBeGreaterThanOrEqual(6);
+    expect(a.spots.every((s) => s.prefecture === "石川県")).toBe(true);
   });
 
   it("seed 読み込み後の件数が seed と一致する", async () => {
     const repo = repoWithSeed();
     const data = buildSeedData();
-    const spots = await repo.spots.inBbox({ bbox: KYOTO_BBOX, limit: 1000 });
+    const spots = await repo.spots.inBbox({ bbox: KANAZAWA_BBOX, limit: 1000 });
     expect(spots).toHaveLength(data.spots.length);
     expect(spots.reduce((s, x) => s + x.postCount, 0)).toBe(data.posts.length);
     const profile = await repo.profiles.getById(SEED_USER_IDS.admin);
     expect(profile?.displayName).toBe("管理者ユーザー");
+  });
+
+  it("seedSpotInfo は spots.json の並び順で名前とカテゴリを返す", () => {
+    expect(seedSpotInfo(seedUuid("spot", 1))).toEqual({ name: "兼六園", category: "nature" });
+    expect(seedSpotInfo(seedUuid("spot", SPOT_SEEDS.length))).toEqual({
+      name: SPOT_SEEDS[SPOT_SEEDS.length - 1].name,
+      category: SPOT_SEEDS[SPOT_SEEDS.length - 1].category,
+    });
+    expect(seedSpotInfo(seedUuid("spot", SPOT_SEEDS.length + 1))).toBeNull();
+    expect(seedSpotInfo("not-a-seed-id")).toBeNull();
+  });
+
+  it("写真付き投稿のコメント末尾にライセンス表示を付け、150 文字以内に収める", () => {
+    const credit = withPhotoCredit("朝は静かです", { author: "Taro", license: "CC BY-SA 4.0" });
+    expect(credit).toBe("朝は静かです\n写真: Taro（CC BY-SA 4.0）");
+    const long = withPhotoCredit("あ".repeat(200), { author: "x".repeat(80), license: "CC BY 2.0" });
+    expect([...long].length).toBeLessThanOrEqual(150);
+    expect(long.endsWith("（CC BY 2.0）")).toBe(true);
+    expect(long).toContain("…");
+    expect(withPhotoCredit("", { author: "", license: "" })).toBe("写真: 不明");
   });
 });
 
 describe("spots", () => {
   it("inBbox は投稿数の多い順で limit 件に切る", async () => {
     const repo = repoWithSeed();
-    const all = await repo.spots.inBbox({ bbox: KYOTO_BBOX, limit: 1000 });
+    const all = await repo.spots.inBbox({ bbox: KANAZAWA_BBOX, limit: 1000 });
     for (let i = 1; i < all.length; i += 1)
       expect(all[i - 1].postCount).toBeGreaterThanOrEqual(all[i].postCount);
-    const top5 = await repo.spots.inBbox({ bbox: KYOTO_BBOX, limit: 5 });
+    const top5 = await repo.spots.inBbox({ bbox: KANAZAWA_BBOX, limit: 5 });
     expect(top5.map((s) => s.id)).toEqual(all.slice(0, 5).map((s) => s.id));
     expect(top5[0].popularity).toBe("very_popular");
     expect(top5[0].coverThumbUrl).toMatch(/^\/api\/dev\/files\/seed\//);
-    // 狭い範囲（清水寺周辺）とカテゴリ絞り込み
+    // 狭い範囲（兼六園周辺）とカテゴリ絞り込み
     const near = await repo.spots.inBbox({
-      bbox: { minLng: 135.78, minLat: 34.99, maxLng: 135.79, maxLat: 35.0 },
+      bbox: { minLng: 136.655, minLat: 36.555, maxLng: 136.67, maxLat: 36.568 },
       limit: 100,
     });
-    expect(near.some((s) => s.name === "清水寺")).toBe(true);
+    expect(near.some((s) => s.name === "兼六園")).toBe(true);
     expect(near.length).toBeLessThan(all.length);
-    const gourmet = await repo.spots.inBbox({ bbox: KYOTO_BBOX, categories: ["gourmet"], limit: 100 });
+    const gourmet = await repo.spots.inBbox({ bbox: KANAZAWA_BBOX, categories: ["gourmet"], limit: 100 });
     expect(gourmet.length).toBeGreaterThan(0);
     expect(gourmet.every((s) => s.category === "gourmet")).toBe(true);
-    const heat = await repo.spots.heatmap({ bbox: KYOTO_BBOX, limit: 3 });
+    const heat = await repo.spots.heatmap({ bbox: KANAZAWA_BBOX, limit: 3 });
     expect(heat).toHaveLength(3);
     expect(heat[0].weight).toBe(all[0].postCount);
   });
 
   it("nearby は半径内を近い順に返す", async () => {
     const repo = repoWithSeed();
-    const center = { lat: 35.005, lng: 135.7649 }; // 錦市場
+    const center = { lat: 36.5608, lng: 136.6584 }; // 金沢21世紀美術館
     const near = await repo.spots.nearby({ ...center, radiusM: 300, limit: 10 });
     expect(near.length).toBeGreaterThanOrEqual(2);
-    expect(near[0].name).toBe("錦市場");
+    expect(near[0].name).toBe("金沢21世紀美術館");
     expect(near[0].distanceM).toBe(0);
     for (let i = 1; i < near.length; i += 1)
       expect(near[i - 1].distanceM).toBeLessThanOrEqual(near[i].distanceM);
     expect(near.every((s) => s.distanceM <= 300)).toBe(true);
     expect(near.every((s) => Math.abs(haversineM(center, s) - s.distanceM) < 1)).toBe(true);
     const tight = await repo.spots.nearby({ ...center, radiusM: 10, limit: 10 });
-    expect(tight.map((s) => s.name)).toEqual(["錦市場"]);
+    expect(tight.map((s) => s.name)).toEqual(["金沢21世紀美術館"]);
     const none = await repo.spots.nearby({ lat: 35.6895, lng: 139.6917, radiusM: 300, limit: 10 });
     expect(none).toEqual([]);
   });
 
   it("search は keyword（表記ゆれ）・city・category で絞り込み、popular/newest で並ぶ", async () => {
     const repo = repoWithSeed();
-    const byName = await repo.spots.search({ keyword: "伏見", sort: "popular", paging: { limit: 20 } });
-    expect(byName.items.map((s) => s.name)).toContain("伏見稲荷大社");
-    expect(byName.items.every((s) => normalizeName(`${s.name}${s.city ?? ""}`).includes("伏見"))).toBe(true);
+    const byName = await repo.spots.search({ keyword: "茶屋", sort: "popular", paging: { limit: 20 } });
+    expect(byName.items.map((s) => s.name)).toContain("ひがし茶屋街");
+    expect(byName.items.every((s) => normalizeName(`${s.name}${s.city ?? ""}`).includes("茶屋"))).toBe(true);
     // 半角カナ・ひらがな・空白の表記ゆれ
     const fuzzy = await repo.spots.search({
-      keyword: "きもの ﾌｫﾚｽﾄ",
+      keyword: "くるーず ﾀｰﾐﾅﾙ",
       sort: "popular",
       paging: { limit: 20 },
     });
-    expect(fuzzy.items.map((s) => s.name)).toEqual(["キモノフォレスト"]);
-    const byCity = await repo.spots.search({ city: "東山区", sort: "popular", paging: { limit: 50 } });
+    expect(fuzzy.items.map((s) => s.name)).toEqual(["金沢港クルーズターミナル"]);
+    const byCity = await repo.spots.search({ city: "野々市市", sort: "popular", paging: { limit: 50 } });
     expect(byCity.items.length).toBeGreaterThan(0);
-    expect(byCity.items.every((s) => s.city === "京都市東山区")).toBe(true);
+    expect(byCity.items.every((s) => s.city === "野々市市")).toBe(true);
     const popular = await repo.spots.search({ sort: "popular", paging: { limit: 50 } });
     const score = (s: { postCount: number; likeCount: number }) => s.postCount + s.likeCount;
     for (let i = 1; i < popular.items.length; i += 1)
@@ -151,27 +182,27 @@ describe("spots", () => {
   it("findSimilarName は半径内で正規化した名前が一致または包含するものを返す", async () => {
     const repo = repoWithSeed();
     const hit = await repo.spots.findSimilarName({
-      name: "清 水 寺",
-      lat: 34.9949,
-      lng: 135.785,
+      name: "兼 六 園",
+      lat: 36.5619,
+      lng: 136.6625,
       radiusM: 50,
     });
-    expect(hit.map((s) => s.name)).toEqual(["清水寺"]);
+    expect(hit.map((s) => s.name)).toEqual(["兼六園"]);
     const kana = await repo.spots.findSimilarName({
-      name: "きものふぉれすと",
-      lat: 35.0154,
-      lng: 135.6779,
+      name: "くるーずたーみなる",
+      lat: 36.6113,
+      lng: 136.6085,
       radiusM: 50,
     });
-    expect(kana.map((s) => s.name)).toEqual(["キモノフォレスト"]);
+    expect(kana.map((s) => s.name)).toEqual(["金沢港クルーズターミナル"]);
     const partial = await repo.spots.findSimilarName({
-      name: "竹林",
-      lat: 35.017,
-      lng: 135.6717,
+      name: "茶屋街",
+      lat: 36.5725,
+      lng: 136.6672,
       radiusM: 50,
     });
-    expect(partial.map((s) => s.name)).toEqual(["嵐山 竹林の小径"]);
-    const far = await repo.spots.findSimilarName({ name: "清水寺", lat: 34.9949, lng: 135.79, radiusM: 50 });
+    expect(partial.map((s) => s.name)).toEqual(["ひがし茶屋街"]);
+    const far = await repo.spots.findSimilarName({ name: "兼六園", lat: 36.5619, lng: 136.667, radiusM: 50 });
     expect(far).toEqual([]);
   });
 });
@@ -183,14 +214,14 @@ describe("posts と recomputeStats", () => {
     await repo.profiles.create({ id: SEED_USER_IDS.userB, displayName: "B" });
     const spot = await repo.spots.create({
       name: "テスト神社",
-      lat: 35.0,
-      lng: 135.7,
+      lat: 36.5,
+      lng: 136.6,
       category: "other",
       source: "gps",
       createdBy: SEED_USER_IDS.userA,
     });
 
-    expect(await repo.spots.inBbox({ bbox: KYOTO_BBOX, limit: 10 })).toEqual([]);
+    expect(await repo.spots.inBbox({ bbox: KANAZAWA_BBOX, limit: 10 })).toEqual([]);
     expect((await repo.spots.getById(spot.id))?.postCount).toBe(0);
 
     // createdAt が同じミリ秒にならないよう間隔を空ける（「同数なら新しい投稿」の判定のため）
@@ -290,8 +321,8 @@ describe("posts と recomputeStats", () => {
     expect(d3?.postCount).toBe(0);
     expect(d3?.coverThumbUrl).toBeNull();
     expect(d3?.stayMinutesMedian).toBeNull();
-    expect(await repo.spots.inBbox({ bbox: KYOTO_BBOX, limit: 10 })).toEqual([]);
-    expect(await repo.spots.nearby({ lat: 35.0, lng: 135.7, radiusM: 100, limit: 10 })).toEqual([]);
+    expect(await repo.spots.inBbox({ bbox: KANAZAWA_BBOX, limit: 10 })).toEqual([]);
+    expect(await repo.spots.nearby({ lat: 36.5, lng: 136.6, radiusM: 100, limit: 10 })).toEqual([]);
     expect((await repo.spots.search({ sort: "popular", paging: { limit: 10 } })).items).toEqual([]);
   });
 
@@ -344,7 +375,7 @@ describe("wishlists と plans", () => {
     const repo = repoWithSeed();
     const data = buildSeedData();
     const [s1, s2] = data.spots;
-    const list = await repo.wishlists.create({ userId: SEED_USER_IDS.userA, name: "京都旅行" });
+    const list = await repo.wishlists.create({ userId: SEED_USER_IDS.userA, name: "金沢旅行" });
     expect(await repo.wishlists.countByUser(SEED_USER_IDS.userA)).toBe(1);
     expect(await repo.wishlists.addItem(list.id, s1.id)).toEqual({ added: true, itemCount: 1 });
     expect(await repo.wishlists.addItem(list.id, s1.id)).toEqual({ added: false, itemCount: 1 });
@@ -358,7 +389,7 @@ describe("wishlists と plans", () => {
       params: {
         listId: list.id,
         spotIds: [s1.id, s2.id],
-        origin: { lat: 34.9858, lng: 135.7588, label: "京都駅" },
+        origin: { lat: 36.578, lng: 136.6478, label: "金沢駅" },
         destination: null,
         date: "2026-11-03",
         startTime: "09:00",
@@ -408,7 +439,7 @@ describe("wishlists と plans", () => {
     // 共有トークン
     await repo.wishlists.setShareToken(list.id, "token-abc");
     const shared = await repo.wishlists.getByShareToken("token-abc");
-    expect(shared?.name).toBe("京都旅行");
+    expect(shared?.name).toBe("金沢旅行");
     expect(shared?.ownerDisplayName).toBe("開発ユーザーA");
     await repo.wishlists.setShareToken(list.id, null);
     expect(await repo.wishlists.getByShareToken("token-abc")).toBeNull();
@@ -612,7 +643,7 @@ describe("profiles", () => {
     expect((await repo.posts.getById(otherPost.id))!.likeCount).toBe(likedCount - 1);
     expect((await repo.reports.listOpen({ limit: 10 })).items).toEqual([]);
 
-    const spots = await repo.spots.inBbox({ bbox: KYOTO_BBOX, limit: 1000 });
+    const spots = await repo.spots.inBbox({ bbox: KANAZAWA_BBOX, limit: 1000 });
     expect(spots.reduce((s, x) => s + x.postCount, 0)).toBe(data.posts.length - myPosts.length);
     // 退会者だけが投稿していたスポットは地図から消える
     const onlyMine = data.spots.filter((s) =>
@@ -692,7 +723,7 @@ describe("永続化", () => {
     expect(fs.existsSync(path.join(dataDir, "memory.json"))).toBe(true);
     const again = createMemoryRepository(true, { persist: true, dataDir });
     expect((await again.wishlists.getById(list.id))?.name).toBe("保存されるリスト");
-    expect((await again.spots.inBbox({ bbox: KYOTO_BBOX, limit: 1000 })).length).toBe(
+    expect((await again.spots.inBbox({ bbox: KANAZAWA_BBOX, limit: 1000 })).length).toBe(
       buildSeedData().spots.length,
     );
     const noPersist = createMemoryRepository(true, { persist: false, dataDir });

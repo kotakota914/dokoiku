@@ -36,23 +36,23 @@ const S1 = "22222222-2222-4222-8222-222222222221";
 const spots: SpotSummary[] = [
   {
     id: S1,
-    name: "伏見稲荷大社",
-    lat: 34.9671,
-    lng: 135.7727,
+    name: "兼六園",
+    lat: 36.5619,
+    lng: 136.6625,
     category: "history",
     postCount: 10,
     likeCount: 1,
     popularity: "popular",
     coverThumbUrl: null,
-    prefecture: "京都府",
-    city: "京都市",
+    prefecture: "石川県",
+    city: "金沢市",
   },
 ];
 
 const params: PlanParams = {
   listId: LIST_ID,
   spotIds: [S1],
-  origin: { lat: 34.9858, lng: 135.7588, label: "京都駅" },
+  origin: { lat: 36.578, lng: 136.6478, label: "金沢駅" },
   destination: null,
   date: "2026-11-03",
   startTime: "09:00",

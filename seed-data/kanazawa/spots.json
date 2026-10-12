@@ -1,0 +1,986 @@
+[
+  {
+    "key": "kenrokuen",
+    "name": "兼六園",
+    "lat": 36.5619,
+    "lng": 136.6625,
+    "category": "nature",
+    "address": "兼六町1",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt120",
+    "postCountTarget": 25,
+    "hourProfile": "morning",
+    "comments": [
+      "早朝開園（無料）の時間帯は人がほとんどいなくて霞ヶ池が静かです",
+      "徽軫灯籠は池の向こう側から撮ると定番の構図になります",
+      "雪吊りは11月から3月まで。冬の朝は枝に雪が残っていてきれいでした",
+      "園内は坂が多いので歩きやすい靴がおすすめです",
+      "桂坂口から入って蓮池門口へ抜けると金沢城公園にそのまま行けます",
+      "紅葉のライトアップは夕方から混むので早めの入園がおすすめ"
+    ],
+    "commons": { "categories": ["Kenroku-en"], "search": ["兼六園", "Kenrokuen", "Kenroku-en"] },
+    "verified": true
+  },
+  {
+    "key": "kanazawa-castle",
+    "name": "金沢城公園",
+    "lat": 36.5649,
+    "lng": 136.659,
+    "category": "history",
+    "address": "丸の内1-1",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt120",
+    "postCountTarget": 22,
+    "hourProfile": "day",
+    "comments": [
+      "石川門は兼六園側から見上げると白い鉛瓦が映えます",
+      "五十間長屋の内部は木組みが見られて建築好きにはたまりません",
+      "芝生広場が広いので天気のいい日は休憩にちょうどいいです",
+      "河北門から入るとひがし茶屋街方面へ抜けやすいです",
+      "夜のライトアップは週末だけの日があるので事前に確認を"
+    ],
+    "commons": { "categories": ["Kanazawa Castle"], "search": ["金沢城", "Kanazawa Castle"] },
+    "verified": true
+  },
+  {
+    "key": "higashi-chaya",
+    "name": "ひがし茶屋街",
+    "lat": 36.5725,
+    "lng": 136.6672,
+    "category": "photogenic",
+    "address": "東山1丁目",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt60",
+    "postCountTarget": 23,
+    "hourProfile": "evening",
+    "comments": [
+      "メインの通りは朝9時前なら人がいない写真が撮れます",
+      "夕方に軒先の灯りがともる時間帯が一番雰囲気があります",
+      "志摩や懐華樓は内部見学ができるので1軒は入ってみるのがおすすめ",
+      "金箔ソフトは店によって味が違うので食べ比べも楽しいです",
+      "石畳は雨の日に反射して昼間とは違う写真が撮れます",
+      "着物レンタルの人が多いので午後は通りが混みます"
+    ],
+    "commons": {
+      "categories": ["Higashiyama Higashi, Kanazawa", "Higashi Chaya District"],
+      "search": ["ひがし茶屋街", "Higashi Chaya", "Higashiyama Higashi Kanazawa"]
+    },
+    "verified": true
+  },
+  {
+    "key": "kazuemachi",
+    "name": "主計町茶屋街",
+    "lat": 36.5717,
+    "lng": 136.665,
+    "category": "photogenic",
+    "address": "主計町",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt30",
+    "postCountTarget": 11,
+    "hourProfile": "night",
+    "comments": [
+      "浅野川沿いの料亭の灯りが川面に映る夜が一番きれいです",
+      "ひがし茶屋街から浅野川大橋を渡ってすぐなので合わせて回れます",
+      "あかり坂・暗がり坂の細い路地は昼でも薄暗くて雰囲気があります",
+      "春は川沿いの桜と茶屋の組み合わせが撮れます"
+    ],
+    "commons": { "categories": ["Kazuemachi"], "search": ["主計町", "Kazuemachi Kanazawa"] },
+    "verified": true
+  },
+  {
+    "key": "nishi-chaya",
+    "name": "にし茶屋街",
+    "lat": 36.5567,
+    "lng": 136.6484,
+    "category": "photogenic",
+    "address": "野町2丁目",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt30",
+    "postCountTarget": 7,
+    "hourProfile": "evening",
+    "comments": [
+      "ひがしより小さいぶん人が少なくて落ち着いて歩けます",
+      "西茶屋資料館は無料で、お茶屋の座敷が見られます",
+      "妙立寺（忍者寺）と合わせて回ると効率がいいです",
+      "甘納豆かわむらは夕方に売り切れる商品があるので早めに"
+    ],
+    "commons": { "categories": ["Nishi Chaya District"], "search": ["にし茶屋街", "Nishi Chaya Kanazawa"] },
+    "verified": true
+  },
+  {
+    "key": "omicho",
+    "name": "近江町市場",
+    "lat": 36.5712,
+    "lng": 136.6572,
+    "category": "gourmet",
+    "address": "上近江町50",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt60",
+    "postCountTarget": 18,
+    "hourProfile": "lunch",
+    "comments": [
+      "海鮮丼は11時前に並ぶと待ち時間が短いです",
+      "のどぐろの炙りをその場で食べられる店があります",
+      "水曜は休みの店が多いので曜日に注意",
+      "2階の飲食店街は1階より空いていることが多いです",
+      "冬は加能ガニが並んで市場全体が賑やかになります",
+      "食べ歩きは店の前で済ませるのがマナーです"
+    ],
+    "commons": { "categories": ["Omicho Ichiba"], "search": ["近江町市場", "Omicho Market"] },
+    "verified": true
+  },
+  {
+    "key": "museum21",
+    "name": "金沢21世紀美術館",
+    "lat": 36.5608,
+    "lng": 136.6584,
+    "category": "other",
+    "address": "広坂1丁目2-1",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt120",
+    "postCountTarget": 19,
+    "hourProfile": "day",
+    "comments": [
+      "スイミング・プールは地下から見る方は予約制なので早めに",
+      "無料ゾーンだけでも外の作品と建物を楽しめます",
+      "円形の建物なので入口が分かりにくいですが、どこからでも入れます",
+      "芝生に置かれたカラーアクティヴィティ・ハウスは夕方の光がきれいです",
+      "月曜休館。特別展は週末の午後が一番混みます"
+    ],
+    "commons": {
+      "categories": ["21st Century Museum of Contemporary Art, Kanazawa"],
+      "search": ["金沢21世紀美術館", "21st Century Museum of Contemporary Art Kanazawa"]
+    },
+    "verified": true
+  },
+  {
+    "key": "nagamachi",
+    "name": "長町武家屋敷跡",
+    "lat": 36.5637,
+    "lng": 136.652,
+    "category": "history",
+    "address": "長町1丁目",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt60",
+    "postCountTarget": 14,
+    "hourProfile": "morning",
+    "comments": [
+      "土塀の薦掛けは12月から3月まで。冬ならではの景色です",
+      "野村家の庭園は小さいけれど見応えがあります",
+      "朝は観光バスが来る前で石畳の通りが静かです",
+      "香林坊から歩いて5分なので買い物と合わせて回れます",
+      "用水沿いの道は夏でも少し涼しく感じます"
+    ],
+    "commons": {
+      "categories": ["Nagamachi, Kanazawa"],
+      "search": ["長町武家屋敷", "Nagamachi Kanazawa samurai"]
+    },
+    "verified": true
+  },
+  {
+    "key": "oyama-jinja",
+    "name": "尾山神社",
+    "lat": 36.5658,
+    "lng": 136.6545,
+    "category": "history",
+    "address": "尾山町11-1",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt30",
+    "postCountTarget": 12,
+    "hourProfile": "evening",
+    "comments": [
+      "神門のステンドグラスは日没後にライトアップされます",
+      "境内の裏から金沢城公園の鼠多門橋へ抜けられます",
+      "前田利家公とまつの像があるので歴史好きは要チェック",
+      "御朱印は社務所で受け付けていて午前中が空いています"
+    ],
+    "commons": { "categories": ["Oyama Shrine (Kanazawa)"], "search": ["尾山神社", "Oyama Shrine Kanazawa"] },
+    "verified": true
+  },
+  {
+    "key": "tsuzumimon",
+    "name": "金沢駅 鼓門",
+    "lat": 36.578,
+    "lng": 136.6478,
+    "category": "photogenic",
+    "address": "木ノ新保町1-1",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt30",
+    "postCountTarget": 16,
+    "hourProfile": "night",
+    "comments": [
+      "夜のライトアップは季節で色が変わります",
+      "もてなしドームの下から見上げると鼓門の全体が入ります",
+      "朝の通勤時間帯は人が多いので撮影は早朝か夜がおすすめ",
+      "バスターミナルは東口。兼六園方面は7番乗り場からが便利です",
+      "駅前の噴水時計は時刻と文字が水で表示されて面白いです"
+    ],
+    "commons": {
+      "categories": ["Kanazawa Station", "Tsuzumi Gate"],
+      "search": ["金沢駅 鼓門", "Kanazawa Station Tsuzumi Gate"]
+    },
+    "verified": true
+  },
+  {
+    "key": "suzuki-daisetz",
+    "name": "鈴木大拙館",
+    "lat": 36.5579,
+    "lng": 136.6613,
+    "category": "other",
+    "address": "本多町3丁目4-20",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt60",
+    "postCountTarget": 9,
+    "hourProfile": "day",
+    "comments": [
+      "水鏡の庭は風のない午前中が一番きれいに映ります",
+      "思索空間でしばらく座っていると時間を忘れます",
+      "展示は小さいので30分あれば十分ですが、庭でゆっくりしたくなります",
+      "本多の森公園から歩いて行くと木陰の道で気持ちいいです"
+    ],
+    "commons": { "categories": ["D.T. Suzuki Museum"], "search": ["鈴木大拙館", "D.T. Suzuki Museum"] },
+    "verified": true
+  },
+  {
+    "key": "ishikawa-library",
+    "name": "石川県立図書館",
+    "lat": 36.5516,
+    "lng": 136.6764,
+    "category": "other",
+    "address": "小立野2丁目43-1",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt120",
+    "postCountTarget": 10,
+    "hourProfile": "day",
+    "comments": [
+      "円形の大閲覧空間は吹き抜けで圧巻です。写真は決められた場所で撮れます",
+      "椅子の種類が多くて座り比べが楽しいです",
+      "レポート作成に使うなら平日の午前中が席を取りやすいです",
+      "カフェが併設されていて半日こもれます",
+      "駐車場は広いですが休日の午後は満車になります"
+    ],
+    "commons": {
+      "categories": ["Ishikawa Prefectural Library"],
+      "search": ["石川県立図書館", "Ishikawa Prefectural Library"]
+    },
+    "verified": true
+  },
+  {
+    "key": "myoryuji",
+    "name": "妙立寺（忍者寺）",
+    "lat": 36.5563,
+    "lng": 136.6509,
+    "category": "history",
+    "address": "野町1丁目2-12",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt60",
+    "postCountTarget": 8,
+    "hourProfile": "day",
+    "comments": [
+      "拝観は予約制なので電話してから行くこと",
+      "仕掛けの説明を聞きながら回るので45分ほどかかります",
+      "堂内は撮影禁止です",
+      "にし茶屋街から徒歩3分なので一緒に回りやすいです"
+    ],
+    "commons": {
+      "categories": ["Myōryū-ji (Kanazawa)"],
+      "search": ["妙立寺", "Myoryuji Kanazawa ninja temple"]
+    },
+    "verified": true
+  },
+  {
+    "key": "onosho-yosui",
+    "name": "大野庄用水",
+    "lat": 36.5642,
+    "lng": 136.6512,
+    "category": "nature",
+    "address": "長町",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt30",
+    "postCountTarget": 4,
+    "hourProfile": "morning",
+    "comments": [
+      "長町の土塀と用水の組み合わせが金沢らしい景色です",
+      "流れが速いので小さな子どもは手をつないで歩くと安心",
+      "朝は用水の水音だけが聞こえて静かです"
+    ],
+    "commons": { "categories": ["Onosho Canal"], "search": ["大野庄用水", "Onosho yosui Kanazawa"] },
+    "verified": true
+  },
+  {
+    "key": "saigawa-ohashi",
+    "name": "犀川大橋",
+    "lat": 36.5584,
+    "lng": 136.6522,
+    "category": "photogenic",
+    "address": "片町2丁目",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt30",
+    "postCountTarget": 5,
+    "hourProfile": "evening",
+    "comments": [
+      "青い鉄橋と夕焼けの組み合わせがきれいです",
+      "橋の下流側の河川敷から全体が撮れます",
+      "片町からにし茶屋街へ向かう途中にあります"
+    ],
+    "commons": { "categories": ["Saigawa Ohashi"], "search": ["犀川大橋", "Saigawa Ohashi bridge Kanazawa"] },
+    "verified": true
+  },
+  {
+    "key": "umenohashi",
+    "name": "浅野川 梅ノ橋",
+    "lat": 36.5725,
+    "lng": 136.669,
+    "category": "photogenic",
+    "address": "東山1丁目",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt30",
+    "postCountTarget": 6,
+    "hourProfile": "evening",
+    "comments": [
+      "木の橋なので車が来ず、ゆっくり写真が撮れます",
+      "夕方は川面に空の色が映って一番きれいです",
+      "ひがし茶屋街から徒歩2分。川沿いの散歩コースにちょうどいいです",
+      "春は川沿いの桜並木がきれいです"
+    ],
+    "commons": {
+      "categories": ["Asano River"],
+      "search": ["梅ノ橋 浅野川", "Umenohashi Asano River Kanazawa"]
+    },
+    "verified": true
+  },
+  {
+    "key": "utatsuyama",
+    "name": "卯辰山公園",
+    "lat": 36.571,
+    "lng": 136.6805,
+    "category": "nature",
+    "address": "卯辰町",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt60",
+    "postCountTarget": 6,
+    "hourProfile": "night",
+    "comments": [
+      "見晴らし台からの夜景は金沢市街が一望できます",
+      "車で行くのが楽ですが、ひがし茶屋街から歩いて登ると30分ほどです",
+      "初夏は花菖蒲園が見頃です",
+      "夜は暗いので懐中電灯かスマホのライトがあると安心"
+    ],
+    "commons": { "categories": ["Utatsuyama"], "search": ["卯辰山", "Utatsuyama Kanazawa"] },
+    "verified": true
+  },
+  {
+    "key": "umimirai-library",
+    "name": "金沢海みらい図書館",
+    "lat": 36.598,
+    "lng": 136.6248,
+    "category": "other",
+    "address": "寺中町イ1-1",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt60",
+    "postCountTarget": 4,
+    "hourProfile": "day",
+    "comments": [
+      "壁一面の丸い窓から入る光がやわらかくて居心地がいいです",
+      "館内撮影は受付で確認してから",
+      "金沢駅から車で15分ほど。バスも出ています"
+    ],
+    "commons": {
+      "categories": ["Kanazawa Umimirai Library"],
+      "search": ["金沢海みらい図書館", "Kanazawa Umimirai Library"]
+    },
+    "verified": true
+  },
+  {
+    "key": "ohi-museum",
+    "name": "大樋美術館",
+    "lat": 36.5706,
+    "lng": 136.6612,
+    "category": "history",
+    "address": "橋場町2-17",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt30",
+    "postCountTarget": 3,
+    "hourProfile": "day",
+    "comments": [
+      "大樋焼の飴釉の器が間近で見られます",
+      "ひがし茶屋街へ向かう途中なので寄りやすいです",
+      "庭を眺めながらお茶をいただけます"
+    ],
+    "commons": { "categories": ["Ohi Museum"], "search": ["大樋美術館", "Ohi Museum Kanazawa"] },
+    "verified": true
+  },
+  {
+    "key": "ishiura-jinja",
+    "name": "石浦神社",
+    "lat": 36.5605,
+    "lng": 136.66,
+    "category": "history",
+    "address": "本多町3丁目1-30",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt30",
+    "postCountTarget": 7,
+    "hourProfile": "morning",
+    "comments": [
+      "鳥居が連なる参道は午前中に撮ると人が少ないです",
+      "水玉模様のお守りやおみくじが人気です",
+      "21世紀美術館の向かいなので合わせて寄れます",
+      "朝は参拝客が少なく静かにお参りできます"
+    ],
+    "commons": { "categories": ["Ishiura Shrine"], "search": ["石浦神社", "Ishiura Shrine Kanazawa"] },
+    "verified": true
+  },
+  {
+    "key": "kanazawa-jinja",
+    "name": "金沢神社",
+    "lat": 36.56,
+    "lng": 136.664,
+    "category": "history",
+    "address": "兼六町1-3",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt30",
+    "postCountTarget": 4,
+    "hourProfile": "morning",
+    "comments": [
+      "学問の神様なので受験シーズンは絵馬がたくさん掛かっています",
+      "隣の金城霊沢は金沢の地名の由来と言われています",
+      "兼六園の随身坂口のすぐ横です"
+    ],
+    "commons": { "categories": ["Kanazawa Shrine"], "search": ["金沢神社", "Kanazawa Shrine Kenrokuen"] },
+    "verified": true
+  },
+  {
+    "key": "gyokuseninmaru",
+    "name": "玉泉院丸庭園",
+    "lat": 36.5635,
+    "lng": 136.6565,
+    "category": "nature",
+    "address": "丸の内1-1",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt30",
+    "postCountTarget": 8,
+    "hourProfile": "evening",
+    "comments": [
+      "日没後のライトアップは金土日と祝日の前日だけです",
+      "色紙短冊積石垣は庭園の奥から見上げる構図がおすすめ",
+      "玉泉庵でお抹茶をいただきながら庭を眺められます",
+      "金沢城公園の中にあって入園無料です"
+    ],
+    "commons": {
+      "categories": ["Gyokusen'inmaru Garden"],
+      "search": ["玉泉院丸庭園", "Gyokuseninmaru Garden"]
+    },
+    "verified": true
+  },
+  {
+    "key": "shiko-park",
+    "name": "いしかわ四高記念公園",
+    "lat": 36.5618,
+    "lng": 136.656,
+    "category": "nature",
+    "address": "広坂2丁目2-5",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt30",
+    "postCountTarget": 3,
+    "hourProfile": "lunch",
+    "comments": [
+      "赤レンガの四高記念文化交流館と芝生の組み合わせが絵になります",
+      "香林坊の買い物の合間にベンチで休憩できます",
+      "桜の時期は花見の人で賑わいます"
+    ],
+    "commons": {
+      "categories": ["Ishikawa Shiko Memorial Park"],
+      "search": ["四高記念公園", "Shiko Memorial Park Kanazawa"]
+    },
+    "verified": true
+  },
+  {
+    "key": "katamachi",
+    "name": "片町",
+    "lat": 36.5597,
+    "lng": 136.6528,
+    "category": "gourmet",
+    "address": "片町1丁目",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt120",
+    "postCountTarget": 13,
+    "hourProfile": "night",
+    "comments": [
+      "金沢おでんの店は夕方の開店直後に入らないと満席になります",
+      "ハントンライスは片町の洋食屋が発祥と言われています",
+      "週末の夜は予約なしだと居酒屋に入れないことが多いです",
+      "終バスが早いのでタクシーの場所を先に確認しておくと安心",
+      "スクランブル交差点のあたりが待ち合わせの定番です"
+    ],
+    "commons": { "categories": ["Katamachi, Kanazawa"], "search": ["片町 金沢", "Katamachi Kanazawa"] },
+    "verified": true
+  },
+  {
+    "key": "korinbo",
+    "name": "香林坊",
+    "lat": 36.5615,
+    "lng": 136.6549,
+    "category": "other",
+    "address": "香林坊2丁目",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt60",
+    "postCountTarget": 6,
+    "hourProfile": "evening",
+    "comments": [
+      "百貨店とせせらぎ通りの間で買い物と食事が両方できます",
+      "冬はケヤキ並木のイルミネーションがきれいです",
+      "兼六園・21世紀美術館・長町のどこへも徒歩10分圏内です",
+      "雨の日はアトリオの地下から移動すると濡れません"
+    ],
+    "commons": { "categories": ["Kōrinbō"], "search": ["香林坊", "Korinbo Kanazawa"] },
+    "verified": true
+  },
+  {
+    "key": "cruise-terminal",
+    "name": "金沢港クルーズターミナル",
+    "lat": 36.6113,
+    "lng": 136.6085,
+    "category": "photogenic",
+    "address": "無量寺町リ65",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt60",
+    "postCountTarget": 4,
+    "hourProfile": "evening",
+    "comments": [
+      "展望デッキから日本海に沈む夕日が見えます",
+      "大型クルーズ船が着く日は船を間近で見られます",
+      "2階のレストランは海を見ながら食事ができます",
+      "夜は建物の照明が水面に映ってきれいです"
+    ],
+    "commons": {
+      "categories": ["Port of Kanazawa"],
+      "search": ["金沢港クルーズターミナル", "Kanazawa Port Cruise Terminal"]
+    },
+    "verified": true
+  },
+  {
+    "key": "nomura-ke",
+    "name": "武家屋敷跡 野村家",
+    "lat": 36.5633,
+    "lng": 136.6516,
+    "category": "history",
+    "address": "長町1丁目3-32",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt30",
+    "postCountTarget": 6,
+    "hourProfile": "day",
+    "comments": [
+      "縁側から見る庭園は池に鯉が泳いでいて落ち着きます",
+      "2階の茶室でお抹茶をいただけます",
+      "開館直後は団体客が来る前で静かです"
+    ],
+    "commons": {
+      "categories": ["Nomura-ke"],
+      "search": ["野村家 武家屋敷", "Nomura samurai house Kanazawa"]
+    },
+    "verified": true
+  },
+  {
+    "key": "ishikawa-art-museum",
+    "name": "石川県立美術館",
+    "lat": 36.5595,
+    "lng": 136.6625,
+    "category": "other",
+    "address": "出羽町2-1",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt60",
+    "postCountTarget": 4,
+    "hourProfile": "day",
+    "comments": [
+      "野々村仁清の色絵雉香炉は常設で見られます",
+      "併設のカフェのケーキが有名で午後は並びます",
+      "兼六園の隣なのでセットで回りやすいです"
+    ],
+    "commons": {
+      "categories": ["Ishikawa Prefectural Museum of Art"],
+      "search": ["石川県立美術館", "Ishikawa Prefectural Museum of Art"]
+    },
+    "verified": true
+  },
+  {
+    "key": "crafts-gallery",
+    "name": "国立工芸館",
+    "lat": 36.5603,
+    "lng": 136.6652,
+    "category": "other",
+    "address": "出羽町3-2",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt60",
+    "postCountTarget": 3,
+    "hourProfile": "day",
+    "comments": [
+      "移築した旧陸軍の建物自体が見どころです",
+      "展示は小ぶりなので1時間あれば回れます",
+      "石川県立美術館のすぐ隣にあります"
+    ],
+    "commons": {
+      "categories": ["National Crafts Museum"],
+      "search": ["国立工芸館", "National Crafts Museum Kanazawa"]
+    },
+    "verified": true
+  },
+  {
+    "key": "kyoka-museum",
+    "name": "泉鏡花記念館",
+    "lat": 36.5717,
+    "lng": 136.6632,
+    "category": "history",
+    "address": "下新町2-3",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt30",
+    "postCountTarget": 2,
+    "hourProfile": "day",
+    "comments": ["鏡花の生家跡に建っていて展示は小さめです", "主計町茶屋街から歩いてすぐです"],
+    "commons": {
+      "categories": ["Izumi Kyoka Kinenkan"],
+      "search": ["泉鏡花記念館", "Izumi Kyoka Memorial Museum"]
+    },
+    "verified": true
+  },
+  {
+    "key": "morihachi",
+    "name": "森八 本店",
+    "lat": 36.57,
+    "lng": 136.661,
+    "category": "gourmet",
+    "address": "大手町10-15",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt30",
+    "postCountTarget": 5,
+    "hourProfile": "lunch",
+    "comments": [
+      "長生殿は日持ちするので土産にちょうどいいです",
+      "2階の金沢菓子木型美術館は入場無料です",
+      "喫茶で季節の生菓子とお抹茶がいただけます"
+    ],
+    "commons": null,
+    "photoNote": "チームで撮影",
+    "verified": true
+  },
+  {
+    "key": "hyakubangai",
+    "name": "金沢百番街 あんと",
+    "lat": 36.5783,
+    "lng": 136.649,
+    "category": "gourmet",
+    "address": "木ノ新保町1-1",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt60",
+    "postCountTarget": 8,
+    "hourProfile": "evening",
+    "comments": [
+      "帰りの新幹線の前に土産をまとめて買えます",
+      "金沢おでんや寿司の店は夕方が混みます",
+      "加賀麩や金箔スイーツなど金沢らしい土産が揃っています",
+      "列車の時間までの待ち時間にちょうどいいです"
+    ],
+    "commons": null,
+    "photoNote": "チームで撮影",
+    "verified": true
+  },
+  {
+    "key": "grill-otsuka",
+    "name": "グリルオーツカ",
+    "lat": 36.5614,
+    "lng": 136.6525,
+    "category": "gourmet",
+    "address": "片町2丁目9-15",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt60",
+    "postCountTarget": 6,
+    "hourProfile": "lunch",
+    "comments": [
+      "ハントンライスの元祖と言われる店。開店前から行列です",
+      "量が多いので小盛りを選べるか聞いてみるといいです",
+      "昼の部は13時過ぎると少し落ち着きます"
+    ],
+    "commons": null,
+    "photoNote": "チームで撮影",
+    "verified": true
+  },
+  {
+    "key": "daijoji-park",
+    "name": "大乗寺丘陵公園",
+    "lat": 36.534,
+    "lng": 136.66,
+    "category": "nature",
+    "address": "長坂町",
+    "prefecture": "石川県",
+    "city": "金沢市",
+    "stayDefault": "lt60",
+    "postCountTarget": 4,
+    "hourProfile": "day",
+    "comments": [
+      "丘の上から金沢市街と日本海まで見渡せます",
+      "春はつつじ、初夏は花菖蒲が咲きます",
+      "遊具と芝生が広いので家族連れが多いです"
+    ],
+    "commons": null,
+    "photoNote": "チームで撮影",
+    "verified": true
+  },
+  {
+    "key": "nonoichi-camino",
+    "name": "にぎわいの里ののいち カミーノ",
+    "lat": 36.522,
+    "lng": 136.616,
+    "category": "other",
+    "address": "三納1丁目1",
+    "prefecture": "石川県",
+    "city": "野々市市",
+    "stayDefault": "lt60",
+    "postCountTarget": 3,
+    "hourProfile": "day",
+    "comments": [
+      "市民ホールと図書館コーナーがあり、自習にも使えます",
+      "週末はマルシェなどのイベントをよくやっています",
+      "野々市駅から歩いて10分ほどです"
+    ],
+    "commons": null,
+    "photoNote": "チームで撮影",
+    "verified": false,
+    "note": "要確認：住所と座標（野々市市三納1丁目）は現地で確認する"
+  },
+  {
+    "key": "nonoichi-kodaimae",
+    "name": "野々市工大前駅",
+    "lat": 36.5285,
+    "lng": 136.6255,
+    "category": "other",
+    "address": "扇が丘",
+    "prefecture": "石川県",
+    "city": "野々市市",
+    "stayDefault": "lt30",
+    "postCountTarget": 3,
+    "hourProfile": "morning",
+    "comments": [
+      "北鉄石川線で野町駅まで約15分。片町へ出るときに便利です",
+      "朝の通学時間帯は電車が混みます",
+      "駅から大学の正門まで徒歩5分ほどです"
+    ],
+    "commons": null,
+    "photoNote": "チームで撮影",
+    "verified": false,
+    "note": "要確認：駅の座標は現地で確認する"
+  },
+  {
+    "key": "kit-main-gate",
+    "name": "金沢工業大学 正門",
+    "lat": 36.5329,
+    "lng": 136.6283,
+    "category": "photogenic",
+    "address": "扇が丘7-1",
+    "prefecture": "石川県",
+    "city": "野々市市",
+    "stayDefault": "lt30",
+    "postCountTarget": 6,
+    "hourProfile": "morning",
+    "comments": [
+      "入学式と卒業式の日は看板の前で写真を撮る列ができます",
+      "春は並木の新緑がきれいで通学が気持ちいいです",
+      "夜はライトが点いて雰囲気が変わります",
+      "工大前駅から歩いてくると最初に見える目印です"
+    ],
+    "commons": null,
+    "photoNote": "チームで撮影",
+    "verified": false,
+    "note": "要確認：正門の位置（座標）はチームで現地確認する"
+  },
+  {
+    "key": "kit-latera",
+    "name": "金沢工業大学 学生食堂 ラテラ（21号館）",
+    "lat": 36.5318,
+    "lng": 136.628,
+    "category": "gourmet",
+    "address": "扇が丘7-1",
+    "prefecture": "石川県",
+    "city": "野々市市",
+    "stayDefault": "lt60",
+    "postCountTarget": 7,
+    "hourProfile": "lunch",
+    "comments": [
+      "12時ちょうどは行列になるので2限が早く終わった日が狙い目です",
+      "100円朝食の期間は8時台でも席がほぼ埋まります",
+      "日替わり定食は売り切れが早いので早めに",
+      "窓際の席は外が見えて気分転換になります",
+      "夕食の時間帯は比較的空いています"
+    ],
+    "commons": null,
+    "photoNote": "チームで撮影",
+    "verified": true,
+    "note": "名称は「21号館1階 ラテラ」として大学の発表で確認済み。座標は要確認"
+  },
+  {
+    "key": "kit-library-center",
+    "name": "金沢工業大学 ライブラリーセンター",
+    "lat": 36.5338,
+    "lng": 136.6272,
+    "category": "other",
+    "address": "扇が丘7-1",
+    "prefecture": "石川県",
+    "city": "野々市市",
+    "stayDefault": "lt120",
+    "postCountTarget": 8,
+    "hourProfile": "day",
+    "comments": [
+      "テスト前は自習席がすぐ埋まるので開館直後に行くのがおすすめ",
+      "グループ学習室は予約すれば声を出して相談できます",
+      "工学の専門書が充実していてレポートの参考文献探しに助かります",
+      "静かなフロアと会話できるフロアが分かれているので使い分けできます",
+      "夜は静かで集中できます"
+    ],
+    "commons": null,
+    "photoNote": "チームで撮影",
+    "verified": true,
+    "note": "名称「ライブラリーセンター」は大学の発表で確認済み。座標と開館時間は要確認"
+  },
+  {
+    "key": "kit-yumekobo",
+    "name": "金沢工業大学 夢考房41",
+    "lat": 36.5302,
+    "lng": 136.6278,
+    "category": "other",
+    "address": "扇が丘7-1",
+    "prefecture": "石川県",
+    "city": "野々市市",
+    "stayDefault": "lt120",
+    "postCountTarget": 5,
+    "hourProfile": "evening",
+    "comments": [
+      "1階の加工エリアは安全講習を受けてから使えます",
+      "3Dプリンタは予約制なので早めに申し込むこと",
+      "2階はプロジェクトの作業場で放課後が一番賑やかです",
+      "ロボットやソーラーカーの実物が見られます"
+    ],
+    "commons": null,
+    "photoNote": "チームで撮影",
+    "verified": true,
+    "note": "名称「夢考房41」は大学の発表で確認済み。座標は要確認"
+  },
+  {
+    "key": "kit-bldg23",
+    "name": "金沢工業大学 23号館",
+    "lat": 36.5331,
+    "lng": 136.6264,
+    "category": "other",
+    "address": "扇が丘7-1",
+    "prefecture": "石川県",
+    "city": "野々市市",
+    "stayDefault": "lt60",
+    "postCountTarget": 4,
+    "hourProfile": "day",
+    "comments": [
+      "夢考房プロジェクトの発表会はここで開かれます",
+      "大きな講義室があるので学年全体の授業で使います",
+      "空き時間に座れるベンチが廊下にあります"
+    ],
+    "commons": null,
+    "photoNote": "チームで撮影",
+    "verified": true,
+    "note": "名称は確認済み。座標は要確認"
+  },
+  {
+    "key": "kit-bldg8",
+    "name": "金沢工業大学 8号館",
+    "lat": 36.5322,
+    "lng": 136.6292,
+    "category": "other",
+    "address": "扇が丘7-1",
+    "prefecture": "石川県",
+    "city": "野々市市",
+    "stayDefault": "lt30",
+    "postCountTarget": 3,
+    "hourProfile": "day",
+    "comments": [
+      "オープンキャンパスの受付はここです",
+      "正門から近いので待ち合わせに便利です",
+      "1階のロビーは空き時間に座って作業できます"
+    ],
+    "commons": null,
+    "photoNote": "チームで撮影",
+    "verified": true,
+    "note": "名称は確認済み。座標は要確認"
+  },
+  {
+    "key": "kit-lounge",
+    "name": "金沢工業大学 学生ラウンジ",
+    "lat": 36.5325,
+    "lng": 136.6275,
+    "category": "other",
+    "address": "扇が丘7-1",
+    "prefecture": "石川県",
+    "city": "野々市市",
+    "stayDefault": "lt60",
+    "postCountTarget": 4,
+    "hourProfile": "lunch",
+    "comments": [
+      "昼休みは持ち込みのお弁当を食べる人でいっぱいです",
+      "電源のある席は早い者勝ちです",
+      "空きコマにグループワークの打ち合わせで使っています"
+    ],
+    "commons": null,
+    "photoNote": "チームで撮影",
+    "verified": false,
+    "note": "要確認：施設の正式名称と場所（どの号館か）"
+  },
+  {
+    "key": "kit-cafe",
+    "name": "金沢工業大学 学内カフェ",
+    "lat": 36.5334,
+    "lng": 136.6286,
+    "category": "gourmet",
+    "address": "扇が丘7-1",
+    "prefecture": "石川県",
+    "city": "野々市市",
+    "stayDefault": "lt30",
+    "postCountTarget": 3,
+    "hourProfile": "day",
+    "comments": [
+      "コーヒーが安いので午後の眠気覚ましに寄っています",
+      "午前中は空いていてレポートを書くのにちょうどいいです",
+      "テイクアウトして外のベンチで飲むのが気持ちいいです"
+    ],
+    "commons": null,
+    "photoNote": "チームで撮影",
+    "verified": false,
+    "note": "要確認：店名・営業時間・場所"
+  }
+]

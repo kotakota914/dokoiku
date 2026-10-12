@@ -33,7 +33,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 | Q13 | 通報 3 件で自動非表示。管理画面は作らず管理 API のみ |
 | Q14 | Discord Webhook（`NOTIFY_WEBHOOK_URL`）。未設定ならサーバーログのみ |
 | Q15 | 非公開リポジトリ想定 |
-| Q16 | 初期データは京都市内 40 スポット前後（memory モードの seed、supabase の seed.sql） |
+| Q16 | 初期データは金沢市・野々市市 44 スポット（金沢工業大学の学内 8 件を含む）。元データは `seed-data/kanazawa/spots.json`、memory モードの seed と supabase の seed.sql（生成スクリプト）が共用 |
 | Q17 | B 相当：URL は `/spots/[spotId]`。スマホでは地図の上に全画面シート風に表示し、戻ると地図へ。地図の位置は URL ハッシュで保持 |
 
 追加の設計判断：

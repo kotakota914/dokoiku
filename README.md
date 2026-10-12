@@ -59,7 +59,8 @@ src/lib/auth/            getCurrentUser / requireUser / requireAdmin、戻り先
 src/lib/api/             route() ラッパー、ApiError、parseBody/parseQuery、ブラウザ用 api クライアント
 src/lib/external/        OpenRouteService、Nominatim、無料枠管理、通知
 src/lib/planner/         経路作成ロジック（純粋関数）
-supabase/migrations/     SQL（テーブル、PostGIS、RLS、関数）、supabase/seed.sql
+supabase/migrations/     SQL（テーブル、PostGIS、RLS、関数）、supabase/seed.sql（scripts/seed/generate-seed-sql.mjs が生成）
+seed-data/kanazawa/      初期データの元データ（spots.json：金沢 44 スポット、photos.json：写真取得ツールの出力）
 scripts/                 検証・運用スクリプト（db/validate-migrations.sh、ops/cleanup.ts）
 .github/workflows/       定期処理（backup-db, backup-photos, cleanup, keepalive-and-usage）
 e2e/                     Playwright
@@ -95,4 +96,5 @@ npm run check        # typecheck + lint + test
 - [setup.md](./docs/setup.md)：ローカル起動、Supabase モード、Vercel、GitHub Actions、無料枠の確認項目
 - [supabase-setup.md](./docs/supabase-setup.md)：Supabase プロジェクトの作成、migration、Google ログイン、Storage
 - [implementation-report.md](./docs/implementation-report.md)：初回実装の報告（検証結果、実装範囲、未確認事項、引き継ぎ）
+- [photos.md](./docs/photos.md)：写真の入れ方（著作権の注意、Commons からの取得、チーム撮影写真の一括取り込み、Supabase への反映）
 - [AGENTS.md](./AGENTS.md)：開発規則（UI 規約、契約ファイル、並行作業のルール）

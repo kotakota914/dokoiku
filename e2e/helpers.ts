@@ -15,16 +15,17 @@ export const SEED_USERS = {
   admin: { id: "a0000000-0000-4000-8000-000000000003", displayName: "管理者ユーザー" },
 } as const;
 
-/** seed のスポット ID（src/lib/repo/memory/seed.ts の並び順。n は 16 進） */
+/** seed のスポット ID（seed-data/kanazawa/spots.json の並び順。n は 16 進） */
 export function seedSpotId(n: number): string {
   return `b0000000-0000-4000-8000-${n.toString(16).padStart(12, "0")}`;
 }
 
+/** seed-data/kanazawa/spots.json の並び順（1 始まり）に対応する */
 export const SPOTS = {
-  kiyomizu: { id: seedSpotId(1), name: "清水寺", lat: 34.9949, lng: 135.785 },
-  fushimiInari: { id: seedSpotId(2), name: "伏見稲荷大社", lat: 34.9671, lng: 135.7727 },
-  kinkakuji: { id: seedSpotId(3), name: "金閣寺", lat: 35.0394, lng: 135.7292 },
-  kyotoStation: { id: seedSpotId(38), name: "京都駅ビル", lat: 34.9858, lng: 135.7588 },
+  kenrokuen: { id: seedSpotId(1), name: "兼六園", lat: 36.5619, lng: 136.6625 },
+  kanazawaCastle: { id: seedSpotId(2), name: "金沢城公園", lat: 36.5649, lng: 136.659 },
+  higashiChaya: { id: seedSpotId(3), name: "ひがし茶屋街", lat: 36.5725, lng: 136.6672 },
+  kanazawaStation: { id: seedSpotId(10), name: "金沢駅 鼓門", lat: 36.578, lng: 136.6478 },
 } as const;
 
 /** タイルもフォントも参照しない最小の MapLibre スタイル */

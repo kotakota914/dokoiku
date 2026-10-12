@@ -21,7 +21,7 @@ beforeAll(() => {
 
 const basePin: PinSpec = {
   spotId: "a",
-  name: "伏見稲荷大社",
+  name: "兼六園",
   postCount: 3,
   popularity: "normal",
   category: "history",
@@ -49,7 +49,7 @@ describe("createPinElement / updatePinElement", () => {
     await flush();
     expect(el.tagName).toBe("BUTTON");
     expect(el.type).toBe("button");
-    expect(el.getAttribute("aria-label")).toBe("伏見稲荷大社（投稿3件）");
+    expect(el.getAttribute("aria-label")).toBe("兼六園（投稿3件）");
     expect(el.dataset.popularity).toBe("normal");
     const frame = el.querySelector<HTMLElement>(".dk-pin__frame")!;
     expect(frame.style.borderColor).toBe("var(--color-popularity-normal)");
@@ -64,7 +64,7 @@ describe("createPinElement / updatePinElement", () => {
   it("大人気は枠が very の色で flame アイコンが付き、人気は popular の色", async () => {
     const el = within(() => createPinElement({ ...basePin, postCount: 25, popularity: "very_popular" }));
     await flush();
-    expect(el.getAttribute("aria-label")).toBe("伏見稲荷大社（投稿25件）、大人気");
+    expect(el.getAttribute("aria-label")).toBe("兼六園（投稿25件）、大人気");
     const frame = el.querySelector<HTMLElement>(".dk-pin__frame")!;
     expect(frame.style.borderColor).toBe("var(--color-popularity-very)");
     const flame = el.querySelector("[data-flame]")!;
@@ -96,7 +96,7 @@ describe("createPinElement / updatePinElement", () => {
     expect(frame.style.borderWidth).toBe(`${PIN_BORDER_PX}px`);
     expect(el.dataset.selected).toBeUndefined();
     expect(el.querySelector("[data-flame]")).not.toBeNull();
-    expect(el.getAttribute("aria-label")).toBe("伏見稲荷大社（投稿30件）、大人気");
+    expect(el.getAttribute("aria-label")).toBe("兼六園（投稿30件）、大人気");
 
     within(() => updatePinElement(el, basePin));
     expect(el.querySelector("[data-flame]")).toBeNull();
@@ -235,13 +235,13 @@ describe("createClusterElement / updateClusterElement", () => {
 
 describe("createStopElement", () => {
   it("番号と種類を持ち、更新で種類の見た目が変わる", () => {
-    const el = within(() => createStopElement({ label: "1", kind: "spot", name: "清水寺" }));
+    const el = within(() => createStopElement({ label: "1", kind: "spot", name: "金沢城公園" }));
     expect(el.textContent).toBe("1");
-    expect(el.getAttribute("aria-label")).toBe("1番目 清水寺");
+    expect(el.getAttribute("aria-label")).toBe("1番目 金沢城公園");
     expect(el.classList.contains("bg-primary")).toBe(true);
-    within(() => updateStopElement(el, { label: "着", kind: "destination", name: "京都駅" }));
+    within(() => updateStopElement(el, { label: "着", kind: "destination", name: "金沢駅" }));
     expect(el.textContent).toBe("着");
-    expect(el.getAttribute("aria-label")).toBe("到着地 京都駅");
+    expect(el.getAttribute("aria-label")).toBe("到着地 金沢駅");
     expect(el.classList.contains("bg-primary")).toBe(false);
     expect(el.classList.contains("bg-text")).toBe(true);
     const origin = within(() => createStopElement({ label: "発", kind: "origin" }));

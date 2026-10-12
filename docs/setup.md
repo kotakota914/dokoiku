@@ -14,7 +14,7 @@ npm install
 npm run dev                 # http://localhost:3000
 ```
 
-ログインは `/login` の「開発用ログイン」から初期データのユーザー（一般ユーザー 2 人、管理者 1 人）を選ぶ。Google ログインは使わない。`MEMORY_PERSIST=off` にするとサーバー再起動ごとに初期データ（京都市内 40 スポット前後）へ戻る。
+ログインは `/login` の「開発用ログイン」から初期データのユーザー（一般ユーザー 2 人、管理者 1 人）を選ぶ。Google ログインは使わない。`MEMORY_PERSIST=off` にするとサーバー再起動ごとに初期データ（金沢市・野々市市 44 スポット。`seed-data/kanazawa/spots.json`）へ戻る。
 
 外部 API（OpenRouteService、Nominatim）が未設定のときは代替動作になる（移動時間は直線距離からの概算、場所検索は自前 DB のみ）。画面には「概算」「外部検索は利用できません」と表示される。
 

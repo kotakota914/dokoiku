@@ -33,11 +33,11 @@ test.describe("投稿", () => {
     await expect(page.getByText("ステップ 2/4")).toBeVisible();
     await page.getByRole("tab", { name: "スポット名で検索" }).click();
     const panel = page.getByRole("tabpanel");
-    await panel.getByLabel("スポット名").fill("清水");
+    await panel.getByLabel("スポット名").fill("金沢城");
     await panel.getByRole("button", { name: "検索" }).click();
     const results = panel.getByRole("list", { name: "検索結果" });
     await expect(results).toBeVisible();
-    const candidate = results.getByRole("button").filter({ hasText: SPOTS.kiyomizu.name }).first();
+    const candidate = results.getByRole("button").filter({ hasText: SPOTS.kanazawaCastle.name }).first();
     await expect(candidate).toContainText("登録済み");
     await candidate.click();
     await expect(candidate).toHaveAttribute("aria-pressed", "true");
@@ -55,7 +55,7 @@ test.describe("投稿", () => {
     // ステップ 4：確認 → 投稿
     await expect(page.getByText("ステップ 4/4")).toBeVisible();
     await expect(page.getByText(COMMENT, { exact: true })).toBeVisible();
-    await expect(page.getByText(SPOTS.kiyomizu.name, { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(SPOTS.kanazawaCastle.name, { exact: true }).first()).toBeVisible();
     const created = page.waitForResponse(
       (res) => res.url().includes("/api/v1/posts") && res.request().method() === "POST",
     );
@@ -63,8 +63,8 @@ test.describe("投稿", () => {
     const createdRes = await created;
     expect(createdRes.status(), await createdRes.text()).toBe(201);
 
-    await expect(page).toHaveURL(new RegExp(`/spots/${SPOTS.kiyomizu.id}$`), { timeout: 30_000 });
-    await expect(page.getByRole("heading", { name: SPOTS.kiyomizu.name })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/spots/${SPOTS.kanazawaCastle.id}$`), { timeout: 30_000 });
+    await expect(page.getByRole("heading", { name: SPOTS.kanazawaCastle.name })).toBeVisible();
     const myPost = page.getByRole("article", { name: `${SEED_USERS.userA.displayName}の投稿` }).filter({
       hasText: COMMENT,
     });
@@ -75,7 +75,7 @@ test.describe("投稿", () => {
     await page.goto("/me");
     const mine = page.getByRole("article").filter({ hasText: COMMENT }).first();
     await expect(mine).toBeVisible();
-    await expect(mine).toContainText(SPOTS.kiyomizu.name);
+    await expect(mine).toContainText(SPOTS.kanazawaCastle.name);
 
     // 編集ページでコメントを変更して保存
     await mine.getByRole("link", { name: "編集" }).click();

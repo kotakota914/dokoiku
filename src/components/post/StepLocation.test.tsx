@@ -8,16 +8,16 @@ import { GPS_FAILED_MESSAGE, GPS_INACCURATE_MESSAGE, StepLocation } from "./Step
 
 const nearbySpot = {
   id: "11111111-1111-4111-8111-111111111111",
-  name: "鴨川デルタ",
-  lat: 35.03,
-  lng: 135.77,
+  name: "近江町市場",
+  lat: 36.5712,
+  lng: 136.6572,
   category: "nature" as const,
   postCount: 3,
   likeCount: 1,
   popularity: "normal" as const,
   coverThumbUrl: null,
-  prefecture: "京都府",
-  city: "京都市",
+  prefecture: "石川県",
+  city: "金沢市",
   distanceM: 24,
 };
 
@@ -81,7 +81,7 @@ afterEach(() => {
 
 describe("StepLocation（現在地から選ぶ）", () => {
   it("canCreate=false のときは誤差の文言を出し、新規登録ボタンを出さない（F-2 例外）", async () => {
-    mockGeolocation({ lat: 35.03, lng: 135.77, accuracy: 150 });
+    mockGeolocation({ lat: 36.5712, lng: 136.6572, accuracy: 150 });
     const { calls } = mockFetch({
       "/api/v1/spots/nearby": () =>
         jsonResponse({ canCreate: false, spots: [nearbySpot] } satisfies NearbyResponse),
@@ -90,13 +90,13 @@ describe("StepLocation（現在地から選ぶ）", () => {
     expect(await screen.findByText(GPS_INACCURATE_MESSAGE)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "新しいスポットとして登録" })).not.toBeInTheDocument();
     // 候補は選べる
-    expect(screen.getByRole("button", { name: /鴨川デルタ/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /近江町市場/ })).toBeInTheDocument();
     expect(calls[0]).toContain("/api/v1/spots/nearby?");
     expect(calls[0]).toContain("accuracy=150");
   });
 
   it("canCreate=true なら候補と新規登録ボタンを出し、名前を入れると newSpot を返す（F-2-6）", async () => {
-    mockGeolocation({ lat: 35.03, lng: 135.77, accuracy: 12 });
+    mockGeolocation({ lat: 36.5712, lng: 136.6572, accuracy: 12 });
     mockFetch({
       "/api/v1/spots/nearby": () =>
         jsonResponse({ canCreate: true, spots: [nearbySpot] } satisfies NearbyResponse),
@@ -107,19 +107,19 @@ describe("StepLocation（現在地から選ぶ）", () => {
     fireEvent.click(create);
     fireEvent.change(screen.getByLabelText(/スポット名/), { target: { value: "新しい場所" } });
     expect(onChange).toHaveBeenLastCalledWith({
-      newSpot: { name: "新しい場所", lat: 35.03, lng: 135.77, source: "gps", accuracyM: 12 },
+      newSpot: { name: "新しい場所", lat: 36.5712, lng: 136.6572, source: "gps", accuracyM: 12 },
     });
   });
 
   it("候補を押すと spotId を返す", async () => {
-    mockGeolocation({ lat: 35.03, lng: 135.77, accuracy: 12 });
+    mockGeolocation({ lat: 36.5712, lng: 136.6572, accuracy: 12 });
     mockFetch({
       "/api/v1/spots/nearby": () =>
         jsonResponse({ canCreate: true, spots: [nearbySpot] } satisfies NearbyResponse),
     });
     const { onChange } = renderStep();
-    fireEvent.click(await screen.findByRole("button", { name: /鴨川デルタ/ }));
-    expect(onChange).toHaveBeenCalledWith({ spotId: nearbySpot.id, spotName: "鴨川デルタ" });
+    fireEvent.click(await screen.findByRole("button", { name: /近江町市場/ }));
+    expect(onChange).toHaveBeenCalledWith({ spotId: nearbySpot.id, spotName: "近江町市場" });
   });
 
   it("位置情報が拒否されたら文言を出して検索タブへ切り替える（F-2 例外）", async () => {
@@ -132,7 +132,7 @@ describe("StepLocation（現在地から選ぶ）", () => {
   });
 
   it("場所が未選択のあいだ次へは無効", async () => {
-    mockGeolocation({ lat: 35.03, lng: 135.77, accuracy: 12 });
+    mockGeolocation({ lat: 36.5712, lng: 136.6572, accuracy: 12 });
     mockFetch({ "/api/v1/spots/nearby": () => jsonResponse({ canCreate: true, spots: [] }) });
     renderStep();
     await screen.findByText("近くに登録済みのスポットがありません");
@@ -148,48 +148,48 @@ describe("StepLocation（スポット名で検索）", () => {
         {
           source: "db",
           id: nearbySpot.id,
-          name: "鴨川デルタ",
-          lat: 35.03,
-          lng: 135.77,
+          name: "近江町市場",
+          lat: 36.5712,
+          lng: 136.6572,
           address: null,
-          prefecture: "京都府",
-          city: "京都市",
+          prefecture: "石川県",
+          city: "金沢市",
         },
         {
           source: "external",
           id: "osm:1",
-          name: "鴨川公園",
-          lat: 35.02,
-          lng: 135.76,
-          address: "京都府京都市",
-          prefecture: "京都府",
-          city: "京都市",
+          name: "近江町ふれあい館",
+          lat: 36.5705,
+          lng: 136.6565,
+          address: "石川県金沢市",
+          prefecture: "石川県",
+          city: "金沢市",
         },
       ],
     };
     const { calls } = mockFetch({ "/api/v1/places/search": () => jsonResponse(response) });
     const { onChange } = renderStep({ initialTab: "search" });
-    fireEvent.change(screen.getByLabelText("スポット名"), { target: { value: "鴨川" } });
+    fireEvent.change(screen.getByLabelText("スポット名"), { target: { value: "近江町" } });
     expect(calls).toHaveLength(0);
     fireEvent.click(screen.getByRole("button", { name: "検索" }));
-    await screen.findByRole("button", { name: /鴨川公園/ });
-    expect(calls).toEqual(["/api/v1/places/search?q=%E9%B4%A8%E5%B7%9D"]);
+    await screen.findByRole("button", { name: /近江町ふれあい館/ });
+    expect(calls).toEqual(["/api/v1/places/search?q=%E8%BF%91%E6%B1%9F%E7%94%BA"]);
 
-    fireEvent.click(screen.getByRole("button", { name: /鴨川公園/ }));
+    fireEvent.click(screen.getByRole("button", { name: /近江町ふれあい館/ }));
     expect(onChange).toHaveBeenLastCalledWith({
       newSpot: {
-        name: "鴨川公園",
-        lat: 35.02,
-        lng: 135.76,
+        name: "近江町ふれあい館",
+        lat: 36.5705,
+        lng: 136.6565,
         source: "search_external",
         externalRef: "osm:1",
-        address: "京都府京都市",
-        prefecture: "京都府",
-        city: "京都市",
+        address: "石川県金沢市",
+        prefecture: "石川県",
+        city: "金沢市",
       },
     });
-    fireEvent.click(screen.getByRole("button", { name: /鴨川デルタ/ }));
-    expect(onChange).toHaveBeenLastCalledWith({ spotId: nearbySpot.id, spotName: "鴨川デルタ" });
+    fireEvent.click(screen.getByRole("button", { name: /近江町市場/ }));
+    expect(onChange).toHaveBeenLastCalledWith({ spotId: nearbySpot.id, spotName: "近江町市場" });
   });
 
   it("externalUnavailable のときは停止中の案内を出す", async () => {

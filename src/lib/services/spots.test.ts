@@ -33,10 +33,10 @@ vi.mock("@/lib/auth/server", () => ({
 let repo = createMemoryRepository(true, { persist: false });
 vi.mock("@/lib/repo", () => ({ getRepo: async () => repo }));
 
-/** 京都市内をおおむね含む範囲 */
-const KYOTO_BBOX = "135.6,34.85,135.9,35.15";
-const KIYOMIZU_ID = seedUuid("spot", 1);
-const KIYOMIZU = { lat: 34.9949, lng: 135.785 };
+/** 金沢市・野々市市をおおむね含む範囲 */
+const KANAZAWA_BBOX = "136.55,36.48,136.75,36.65";
+const KENROKUEN_ID = seedUuid("spot", 1);
+const KENROKUEN = { lat: 36.5619, lng: 136.6625 };
 const UNKNOWN_ID = "b0000000-0000-4000-8000-ffffffffffff";
 
 beforeEach(() => {
@@ -49,7 +49,7 @@ afterEach(() => {
 
 describe("getSpotsInView", () => {
   it("zoom 9 以上はスポット一覧を投稿数の多い順で返す", async () => {
-    const q = spotsInViewQuerySchema.parse({ bbox: KYOTO_BBOX, zoom: "13" });
+    const q = spotsInViewQuerySchema.parse({ bbox: KANAZAWA_BBOX, zoom: "13" });
     const res = await getSpotsInView(repo, q);
     expect(res.mode).toBe("spots");
     if (res.mode !== "spots") throw new Error("unreachable");
@@ -67,7 +67,7 @@ describe("getSpotsInView", () => {
   });
 
   it("zoom 8 以下はヒートマップ用の点（weight = 投稿数）", async () => {
-    const q = spotsInViewQuerySchema.parse({ bbox: KYOTO_BBOX, zoom: String(MAP_ZOOM.heatmapMax) });
+    const q = spotsInViewQuerySchema.parse({ bbox: KANAZAWA_BBOX, zoom: String(MAP_ZOOM.heatmapMax) });
     const res = await getSpotsInView(repo, q);
     expect(res.mode).toBe("heatmap");
     if (res.mode !== "heatmap") throw new Error("unreachable");
@@ -79,12 +79,12 @@ describe("getSpotsInView", () => {
     });
     expect(res.points.every((p) => p.weight > 0)).toBe(true);
 
-    const nine = await getSpotsInView(repo, spotsInViewQuerySchema.parse({ bbox: KYOTO_BBOX, zoom: "9" }));
+    const nine = await getSpotsInView(repo, spotsInViewQuerySchema.parse({ bbox: KANAZAWA_BBOX, zoom: "9" }));
     expect(nine.mode).toBe("spots");
   });
 
   it("category はカンマ区切りで絞り込める", async () => {
-    const q = spotsInViewQuerySchema.parse({ bbox: KYOTO_BBOX, zoom: "14", category: "gourmet,nature" });
+    const q = spotsInViewQuerySchema.parse({ bbox: KANAZAWA_BBOX, zoom: "14", category: "gourmet,nature" });
     const res = await getSpotsInView(repo, q);
     if (res.mode !== "spots") throw new Error("unreachable");
     expect(res.spots.length).toBeGreaterThan(0);
@@ -102,14 +102,14 @@ describe("getNearbySpots / canCreateSpot", () => {
   it("accuracy 99 なら canCreate: true、100 なら false", async () => {
     expect(canCreateSpot(99)).toBe(true);
     expect(canCreateSpot(100)).toBe(false);
-    const ok = await getNearbySpots(repo, nearbyQuerySchema.parse({ ...KIYOMIZU, accuracy: "99" }));
+    const ok = await getNearbySpots(repo, nearbyQuerySchema.parse({ ...KENROKUEN, accuracy: "99" }));
     expect(ok.canCreate).toBe(true);
-    const ng = await getNearbySpots(repo, nearbyQuerySchema.parse({ ...KIYOMIZU, accuracy: "100" }));
+    const ng = await getNearbySpots(repo, nearbyQuerySchema.parse({ ...KENROKUEN, accuracy: "100" }));
     expect(ng.canCreate).toBe(false);
   });
 
   it("accuracy を省略（誤差不明）すると canCreate: false", async () => {
-    const q = nearbyQuerySchema.parse({ ...KIYOMIZU });
+    const q = nearbyQuerySchema.parse({ ...KENROKUEN });
     expect(q.accuracy).toBeUndefined();
     const res = await getNearbySpots(repo, q);
     expect(res.canCreate).toBe(false);
@@ -117,10 +117,10 @@ describe("getNearbySpots / canCreateSpot", () => {
   });
 
   it("半径内のスポットを近い順に返し、distanceM を含む", async () => {
-    const res = await getNearbySpots(repo, nearbyQuerySchema.parse({ ...KIYOMIZU }));
+    const res = await getNearbySpots(repo, nearbyQuerySchema.parse({ ...KENROKUEN }));
     expect(res.spots.length).toBeGreaterThan(0);
     expect(res.spots.length).toBeLessThanOrEqual(LIMITS.nearbyMax);
-    expect(res.spots[0]).toMatchObject({ id: KIYOMIZU_ID, name: "清水寺", distanceM: 0 });
+    expect(res.spots[0]).toMatchObject({ id: KENROKUEN_ID, name: "兼六園", distanceM: 0 });
     expect(res.spots.every((s) => s.distanceM <= LIMITS.nearbyRadiusDefaultM)).toBe(true);
     for (let i = 1; i < res.spots.length; i++) {
       expect(res.spots[i - 1].distanceM).toBeLessThanOrEqual(res.spots[i].distanceM);
@@ -138,24 +138,26 @@ describe("getNearbySpots / canCreateSpot", () => {
 
 describe("searchSpots", () => {
   it("キーワード（スポット名）で絞り込み、人気順で返す", async () => {
-    const res = await searchSpots(repo, spotSearchQuerySchema.parse({ q: "清水" }));
+    const res = await searchSpots(repo, spotSearchQuerySchema.parse({ q: "兼六" }));
     expect(res.items.length).toBeGreaterThan(0);
-    expect(res.items.some((s) => s.id === KIYOMIZU_ID)).toBe(true);
-    expect(res.items.every((s) => s.name.includes("清水"))).toBe(true);
+    expect(res.items.some((s) => s.id === KENROKUEN_ID)).toBe(true);
+    // 名前または住所（兼六町）に一致する
+    const details = await Promise.all(res.items.map((s) => getSpotDetail(repo, s.id)));
+    expect(details.every((s) => s.name.includes("兼六") || (s.address ?? "").includes("兼六"))).toBe(true);
   });
 
   it("市区町村・カテゴリでも絞り込め、limit とカーソルで続きが取れる", async () => {
     const page1 = await searchSpots(
       repo,
-      spotSearchQuerySchema.parse({ city: "東山区", category: "history", limit: "2" }),
+      spotSearchQuerySchema.parse({ city: "金沢市", category: "history", limit: "2" }),
     );
     expect(page1.items).toHaveLength(2);
-    expect(page1.items.every((s) => s.category === "history" && s.city?.includes("東山区"))).toBe(true);
+    expect(page1.items.every((s) => s.category === "history" && s.city?.includes("金沢市"))).toBe(true);
     expect(page1.nextCursor).toBeTruthy();
     const page2 = await searchSpots(
       repo,
       spotSearchQuerySchema.parse({
-        city: "東山区",
+        city: "金沢市",
         category: "history",
         limit: "2",
         cursor: page1.nextCursor!,
@@ -173,8 +175,8 @@ describe("searchSpots", () => {
 
 describe("getSpotDetail", () => {
   it("詳細を返す（住所・時間帯分布・代表写真）", async () => {
-    const spot = await getSpotDetail(repo, KIYOMIZU_ID);
-    expect(spot.name).toBe("清水寺");
+    const spot = await getSpotDetail(repo, KENROKUEN_ID);
+    expect(spot.name).toBe("兼六園");
     expect(spot.hourHistogram).toHaveLength(24);
     expect(spot.address).toBeTruthy();
     expect(spot.coverThumbUrl).toBeTruthy();
@@ -193,17 +195,17 @@ describe("getSpotDetail", () => {
 
 describe("listSpotPosts", () => {
   it("新着順で 20 件ずつ返し、未ログインは likedByMe が false", async () => {
-    const page = await listSpotPosts(repo, KIYOMIZU_ID, { limit: LIMITS.postsPageSize }, null);
+    const page = await listSpotPosts(repo, KENROKUEN_ID, { limit: LIMITS.postsPageSize }, null);
     expect(page.items).toHaveLength(LIMITS.postsPageSize);
     expect(page.nextCursor).toBeTruthy();
-    expect(page.items.every((p) => p.spotId === KIYOMIZU_ID && p.status === "public")).toBe(true);
+    expect(page.items.every((p) => p.spotId === KENROKUEN_ID && p.status === "public")).toBe(true);
     expect(page.items.every((p) => p.likedByMe === false)).toBe(true);
     for (let i = 1; i < page.items.length; i++) {
       expect(page.items[i - 1].createdAt >= page.items[i].createdAt).toBe(true);
     }
     const rest = await listSpotPosts(
       repo,
-      KIYOMIZU_ID,
+      KENROKUEN_ID,
       { limit: LIMITS.postsPageSize, cursor: page.nextCursor! },
       null,
     );
@@ -212,7 +214,7 @@ describe("listSpotPosts", () => {
   });
 
   it("ログイン中は likedByMe が反映される", async () => {
-    const page = await listSpotPosts(repo, KIYOMIZU_ID, { limit: 50 }, SEED_USER_IDS.userA);
+    const page = await listSpotPosts(repo, KENROKUEN_ID, { limit: 50 }, SEED_USER_IDS.userA);
     expect(page.items.some((p) => p.likedByMe)).toBe(true);
   });
 
@@ -243,9 +245,9 @@ describe("Route Handlers", () => {
     const bad = await GET(get("/spots?zoom=10"), noParams);
     expect(bad.status).toBe(400);
     expect((await bad.json()).error.code).toBe("VALIDATION_ERROR");
-    const badCat = await GET(get(`/spots?bbox=${KYOTO_BBOX}&zoom=10&category=foo`), noParams);
+    const badCat = await GET(get(`/spots?bbox=${KANAZAWA_BBOX}&zoom=10&category=foo`), noParams);
     expect(badCat.status).toBe(400);
-    const ok = await GET(get(`/spots?bbox=${KYOTO_BBOX}&zoom=5`), noParams);
+    const ok = await GET(get(`/spots?bbox=${KANAZAWA_BBOX}&zoom=5`), noParams);
     expect(ok.status).toBe(200);
     expect((await ok.json()).mode).toBe("heatmap");
   });
@@ -264,31 +266,31 @@ describe("Route Handlers", () => {
       params: Promise.resolve({ spotId: UNKNOWN_ID }),
     });
     expect(missing.status).toBe(404);
-    const ok = await getSpot(get(`/spots/${KIYOMIZU_ID}`), {
-      params: Promise.resolve({ spotId: KIYOMIZU_ID }),
+    const ok = await getSpot(get(`/spots/${KENROKUEN_ID}`), {
+      params: Promise.resolve({ spotId: KENROKUEN_ID }),
     });
     expect(ok.status).toBe(200);
-    expect((await ok.json()).name).toBe("清水寺");
+    expect((await ok.json()).name).toBe("兼六園");
   });
 
   it("GET /spots/nearby は未ログインなら 401、ログイン中は canCreate を返す", async () => {
     const { GET } = await import("@/app/api/v1/spots/nearby/route");
     const anon = await GET(
-      get(`/spots/nearby?lat=${KIYOMIZU.lat}&lng=${KIYOMIZU.lng}&accuracy=50`),
+      get(`/spots/nearby?lat=${KENROKUEN.lat}&lng=${KENROKUEN.lng}&accuracy=50`),
       noParams,
     );
     expect(anon.status).toBe(401);
     authState.userId = SEED_USER_IDS.userA;
     const res = await GET(
-      get(`/spots/nearby?lat=${KIYOMIZU.lat}&lng=${KIYOMIZU.lng}&accuracy=150`),
+      get(`/spots/nearby?lat=${KENROKUEN.lat}&lng=${KENROKUEN.lng}&accuracy=150`),
       noParams,
     );
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.canCreate).toBe(false);
-    expect(body.spots[0].name).toBe("清水寺");
+    expect(body.spots[0].name).toBe("兼六園");
     const tooFar = await GET(
-      get(`/spots/nearby?lat=${KIYOMIZU.lat}&lng=${KIYOMIZU.lng}&radius=301`),
+      get(`/spots/nearby?lat=${KENROKUEN.lat}&lng=${KENROKUEN.lng}&radius=301`),
       noParams,
     );
     expect(tooFar.status).toBe(400);
@@ -296,18 +298,20 @@ describe("Route Handlers", () => {
 
   it("GET /spots/search は Page<SpotSummary>", async () => {
     const { GET } = await import("@/app/api/v1/spots/search/route");
-    const res = await GET(get("/spots/search?q=稲荷&sort=newest"), noParams);
+    const res = await GET(get("/spots/search?q=鼓門&sort=newest"), noParams);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.items[0].name).toBe("伏見稲荷大社");
+    expect(body.items[0].name).toBe("金沢駅 鼓門");
     expect(body.nextCursor).toBeNull();
   });
 
   it("GET /spots/{spotId} は詳細、無ければ 404", async () => {
     const { GET } = await import("@/app/api/v1/spots/[spotId]/route");
-    const ok = await GET(get(`/spots/${KIYOMIZU_ID}`), { params: Promise.resolve({ spotId: KIYOMIZU_ID }) });
+    const ok = await GET(get(`/spots/${KENROKUEN_ID}`), {
+      params: Promise.resolve({ spotId: KENROKUEN_ID }),
+    });
     expect(ok.status).toBe(200);
-    expect((await ok.json()).name).toBe("清水寺");
+    expect((await ok.json()).name).toBe("兼六園");
     const nf = await GET(get(`/spots/${UNKNOWN_ID}`), { params: Promise.resolve({ spotId: UNKNOWN_ID }) });
     expect(nf.status).toBe(404);
     expect((await nf.json()).error).toEqual({
@@ -318,13 +322,13 @@ describe("Route Handlers", () => {
 
   it("GET /spots/{spotId}/posts は未ログインでも閲覧でき、limit を検証する", async () => {
     const { GET } = await import("@/app/api/v1/spots/[spotId]/posts/route");
-    const ctx = { params: Promise.resolve({ spotId: KIYOMIZU_ID }) };
-    const ok = await GET(get(`/spots/${KIYOMIZU_ID}/posts?limit=5`), ctx);
+    const ctx = { params: Promise.resolve({ spotId: KENROKUEN_ID }) };
+    const ok = await GET(get(`/spots/${KENROKUEN_ID}/posts?limit=5`), ctx);
     expect(ok.status).toBe(200);
     const body = await ok.json();
     expect(body.items).toHaveLength(5);
     expect(body.nextCursor).toBeTruthy();
-    const bad = await GET(get(`/spots/${KIYOMIZU_ID}/posts?limit=0`), ctx);
+    const bad = await GET(get(`/spots/${KENROKUEN_ID}/posts?limit=0`), ctx);
     expect(bad.status).toBe(400);
     const nf = await GET(get(`/spots/${UNKNOWN_ID}/posts`), {
       params: Promise.resolve({ spotId: UNKNOWN_ID }),

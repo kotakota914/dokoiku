@@ -31,7 +31,7 @@ const {
 
 type Repo = ReturnType<typeof createMemoryRepository>;
 
-const KYOTO_BBOX = { minLng: 135.6, minLat: 34.85, maxLng: 135.9, maxLat: 35.15 };
+const KANAZAWA_BBOX = { minLng: 136.55, minLat: 36.48, maxLng: 136.75, maxLat: 36.65 };
 const tmpDirs: string[] = [];
 
 async function makeRepo(): Promise<Repo> {
@@ -52,7 +52,7 @@ async function uploadedImage(repo: Repo, userId: string) {
 }
 
 async function anySpot(repo: Repo) {
-  const spots = await repo.spots.inBbox({ bbox: KYOTO_BBOX, limit: 5 });
+  const spots = await repo.spots.inBbox({ bbox: KANAZAWA_BBOX, limit: 5 });
   expect(spots.length).toBeGreaterThan(0);
   return spots[0];
 }
@@ -226,15 +226,15 @@ describe("createPost", () => {
     const me = SEED_USER_IDS.userB;
     const image = await uploadedImage(repo, me);
     const reverseGeocode = vi.fn(async () => ({
-      address: "京都府京都市左京区",
-      prefecture: "京都府",
-      city: "京都市左京区",
+      address: "石川県金沢市寺町",
+      prefecture: "石川県",
+      city: "金沢市",
     }));
     const { post, spotId } = await createPost(
       repo,
       me,
       {
-        newSpot: { name: "テスト用の新しい場所", lat: 35.0302, lng: 135.7726, source: "gps", accuracyM: 12 },
+        newSpot: { name: "テスト用の新しい場所", lat: 36.5525, lng: 136.6505, source: "gps", accuracyM: 12 },
         images: [image],
         comment: "飛び石",
         category: "photogenic",
@@ -247,9 +247,9 @@ describe("createPost", () => {
     expect(spot).not.toBeNull();
     expect(spot!.name).toBe("テスト用の新しい場所");
     expect(spot!.category).toBe("photogenic");
-    expect(spot!.address).toBe("京都府京都市左京区");
-    expect(spot!.prefecture).toBe("京都府");
-    expect(spot!.city).toBe("京都市左京区");
+    expect(spot!.address).toBe("石川県金沢市寺町");
+    expect(spot!.prefecture).toBe("石川県");
+    expect(spot!.city).toBe("金沢市");
     expect(spot!.postCount).toBe(1);
     expect(post.spotId).toBe(spotId);
     expect(post.spotName).toBe("テスト用の新しい場所");
@@ -266,13 +266,13 @@ describe("createPost", () => {
       {
         newSpot: {
           name: "外部検索で見つけた場所",
-          lat: 35.01,
-          lng: 135.76,
+          lat: 36.59,
+          lng: 136.64,
           source: "search_external",
           externalRef: "node:1",
-          address: "京都府京都市",
-          prefecture: "京都府",
-          city: "京都市",
+          address: "石川県金沢市",
+          prefecture: "石川県",
+          city: "金沢市",
         },
         images: [image],
         comment: "",
@@ -283,7 +283,7 @@ describe("createPost", () => {
     );
     expect(reverseGeocode).not.toHaveBeenCalled();
     const spot = await repo.spots.getById(spotId);
-    expect(spot!.address).toBe("京都府京都市");
+    expect(spot!.address).toBe("石川県金沢市");
   });
 
   it("停止中（post_create）は 503 で details.feature を返す", async () => {
@@ -389,22 +389,22 @@ describe("defaultReverseGeocode", () => {
             place_id: 1,
             osm_type: "way",
             osm_id: 1,
-            lat: "35.03",
-            lon: "135.77",
-            name: "鴨川デルタ",
-            display_name: "鴨川デルタ, 左京区, 京都市, 京都府, 日本",
-            address: { state: "京都府", city: "京都市", city_district: "左京区" },
+            lat: "36.5725",
+            lon: "136.669",
+            name: "梅ノ橋",
+            display_name: "梅ノ橋, 東山, 金沢市, 石川県, 日本",
+            address: { state: "石川県", city: "金沢市", suburb: "東山" },
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
     );
     vi.stubGlobal("fetch", fetchMock);
-    const geo = await defaultReverseGeocode(repo, 35.03, 135.77);
+    const geo = await defaultReverseGeocode(repo, 36.5725, 136.669);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(geo).toEqual({
-      address: "鴨川デルタ, 左京区, 京都市, 京都府, 日本",
-      prefecture: "京都府",
-      city: "京都市左京区",
+      address: "梅ノ橋, 東山, 金沢市, 石川県, 日本",
+      prefecture: "石川県",
+      city: "金沢市",
     });
     const { provider, feature } = USAGE_LIMITS.nominatim;
     const usage = await repo.apiUsage.get(provider, feature, periodKey("day"));
@@ -413,7 +413,7 @@ describe("defaultReverseGeocode", () => {
     // 失敗は null
     fetchMock.mockRejectedValueOnce(new Error("network down"));
     resetNominatimThrottleForTests();
-    expect(await defaultReverseGeocode(repo, 35.03, 135.77)).toBeNull();
+    expect(await defaultReverseGeocode(repo, 36.5725, 136.669)).toBeNull();
 
     // 停止中は呼ばずに null
     const { limit } = USAGE_LIMITS.nominatim;
@@ -421,7 +421,7 @@ describe("defaultReverseGeocode", () => {
     await repo.apiUsage.setSuspended(provider, feature, periodKey("day"), "2026-10-10T00:00:00.000+09:00");
     const calls = fetchMock.mock.calls.length;
     resetNominatimThrottleForTests();
-    expect(await defaultReverseGeocode(repo, 35.03, 135.77)).toBeNull();
+    expect(await defaultReverseGeocode(repo, 36.5725, 136.669)).toBeNull();
     expect(fetchMock.mock.calls.length).toBe(calls);
   });
 
@@ -430,7 +430,7 @@ describe("defaultReverseGeocode", () => {
     vi.stubEnv("NOMINATIM_ENABLED", "false");
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    expect(await defaultReverseGeocode(repo, 35.03, 135.77)).toBeNull();
+    expect(await defaultReverseGeocode(repo, 36.5725, 136.669)).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

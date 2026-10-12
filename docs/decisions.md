@@ -21,7 +21,7 @@
 | Q13 | 通報 3 件で自動非表示、管理画面は作らない                       | 管理 API（`/admin/*`）は `is_admin` のユーザーのみ                                                                                |
 | Q14 | Discord Webhook                                                 | `NOTIFY_WEBHOOK_URL` 未設定時はサーバーログのみ                                                                                   |
 | Q15 | 非公開リポジトリ                                                | —                                                                                                                                 |
-| Q16 | 京都市内 40 スポット前後                                        | memory の seed と `supabase/seed.sql`。写真は自前撮影に差し替える前提のプレースホルダー                                           |
+| Q16 | 金沢市・野々市市 44 スポット（金沢工業大学の学内 8 件を含む）  | 元データは `seed-data/kanazawa/spots.json`。memory の seed と `supabase/seed.sql`（生成スクリプト）が共用。写真は `photos.json` があれば実写真、無ければプレースホルダー |
 | Q17 | **B 相当**                                                      | ADR-0017                                                                                                                          |
 
 ## 2. 追加 ADR

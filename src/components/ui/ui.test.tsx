@@ -259,7 +259,7 @@ describe("Toast action", () => {
           onClick={() =>
             toast.show({
               type: "success",
-              message: "京都旅行に追加しました",
+              message: "金沢旅行に追加しました",
               action: { label: "リストを見る", href: "/lists/l1" },
             })
           }
@@ -282,7 +282,7 @@ describe("Toast action", () => {
     act(() => {
       link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
-    expect(container.textContent).not.toContain("京都旅行に追加しました");
+    expect(container.textContent).not.toContain("金沢旅行に追加しました");
   });
 });
 

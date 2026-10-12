@@ -52,49 +52,49 @@ const S3 = "22222222-2222-4222-8222-222222222223";
 const spots: SpotSummary[] = [
   {
     id: S1,
-    name: "伏見稲荷大社",
-    lat: 34.9671,
-    lng: 135.7727,
+    name: "兼六園",
+    lat: 36.5619,
+    lng: 136.6625,
     category: "history",
     postCount: 10,
     likeCount: 1,
     popularity: "popular",
     coverThumbUrl: null,
-    prefecture: "京都府",
-    city: "京都市",
+    prefecture: "石川県",
+    city: "金沢市",
   },
   {
     id: S2,
-    name: "清水寺",
-    lat: 34.9949,
-    lng: 135.785,
+    name: "金沢城公園",
+    lat: 36.5649,
+    lng: 136.659,
     category: "history",
     postCount: 3,
     likeCount: 0,
     popularity: "normal",
     coverThumbUrl: null,
-    prefecture: "京都府",
-    city: "京都市",
+    prefecture: "石川県",
+    city: "金沢市",
   },
   {
     id: S3,
-    name: "嵐山",
-    lat: 35.0094,
-    lng: 135.6667,
+    name: "ひがし茶屋街",
+    lat: 36.5725,
+    lng: 136.6672,
     category: "nature",
     postCount: 1,
     likeCount: 0,
     popularity: "normal",
     coverThumbUrl: null,
-    prefecture: "京都府",
-    city: "京都市",
+    prefecture: "石川県",
+    city: "金沢市",
   },
 ];
 
 const params: PlanParams = {
   listId: LIST_ID,
   spotIds: [S1, S2, S3],
-  origin: { lat: 34.9858, lng: 135.7588, label: "京都駅" },
+  origin: { lat: 36.578, lng: 136.6478, label: "金沢駅" },
   destination: null,
   date: "2026-11-03",
   startTime: "09:00",
@@ -155,10 +155,10 @@ describe("Timeline", () => {
     const list = screen.getByRole("list", { name: "訪問順" });
     const rows = within(list).getAllByRole("listitem");
     expect(rows).toHaveLength(3);
-    expect(rows[0]).toHaveTextContent("伏見稲荷大社");
+    expect(rows[0]).toHaveTextContent("兼六園");
     expect(rows[0]).toHaveTextContent("到着 09:25〜出発 10:25");
     expect(rows[0]).toHaveTextContent("おすすめの時間帯");
-    expect(rows[1]).toHaveTextContent("清水寺");
+    expect(rows[1]).toHaveTextContent("金沢城公園");
     expect(rows[2]).toHaveTextContent("昼食休憩");
 
     // 出発地→最初のスポットは開始時刻からの差、以降は travelMinToNext
@@ -169,10 +169,10 @@ describe("Timeline", () => {
     expect(links).toHaveLength(2);
     expect(links[0]).toHaveAttribute(
       "href",
-      "https://www.google.com/maps/dir/?api=1&origin=34.9858,135.7588&destination=34.9671,135.7727&travelmode=transit",
+      "https://www.google.com/maps/dir/?api=1&origin=36.578,136.6478&destination=36.5619,136.6625&travelmode=transit",
     );
     expect(links[1].getAttribute("href")).toContain(
-      "origin=34.9671,135.7727&destination=34.9949,135.785&travelmode=transit",
+      "origin=36.5619,136.6625&destination=36.5649,136.659&travelmode=transit",
     );
     for (const a of links) expect(a).toHaveAttribute("target", "_blank");
   });
@@ -205,7 +205,7 @@ describe("Timeline", () => {
         items={items}
         spotsById={spotsById()}
         origin={params.origin}
-        destination={{ lat: 35.0, lng: 135.75, label: "ホテル" }}
+        destination={{ lat: 36.56, lng: 136.65, label: "ホテル" }}
         startTime={params.startTime}
         endAt="12:58"
         mode="walking"
@@ -216,11 +216,11 @@ describe("Timeline", () => {
     expect(rows[1]).toHaveTextContent("昼食休憩");
     expect(rows[1]).not.toHaveTextContent("移動");
     expect(rows[1].querySelector("a")).toBeNull();
-    expect(rows[2]).toHaveTextContent("清水寺");
+    expect(rows[2]).toHaveTextContent("金沢城公園");
     expect(rows[2]).toHaveTextContent("移動 約18分");
     const links = screen.getAllByRole("link", { name: /Googleマップで経路を開く/ });
     expect(links).toHaveLength(3);
-    expect(links[1].getAttribute("href")).toContain("origin=34.9671,135.7727&destination=34.9949,135.785");
+    expect(links[1].getAttribute("href")).toContain("origin=36.5619,136.6625&destination=36.5649,136.659");
     // 最後のスポット → 到着地
     expect(screen.getByText("移動 約30分")).toBeInTheDocument();
   });
@@ -231,7 +231,7 @@ describe("Timeline", () => {
         items={result.items}
         spotsById={spotsById()}
         origin={params.origin}
-        destination={{ lat: 35.0, lng: 135.75, label: "ホテル" }}
+        destination={{ lat: 36.56, lng: 136.65, label: "ホテル" }}
         startTime={params.startTime}
         endAt="13:00"
         mode="driving"
@@ -241,7 +241,7 @@ describe("Timeline", () => {
     const links = screen.getAllByRole("link", { name: /Googleマップで経路を開く/ });
     expect(links).toHaveLength(3);
     expect(links[2].getAttribute("href")).toContain(
-      "origin=34.9949,135.785&destination=35,135.75&travelmode=transit",
+      "origin=36.5649,136.659&destination=36.56,136.65&travelmode=transit",
     );
   });
 });
@@ -250,7 +250,7 @@ describe("PlanResultView", () => {
   it("入らなかった場所を理由つきで表示し、概算バッジを出す（F-5-5、ADR-0018）", () => {
     render(wrap(<PlanResultView params={params} result={result} spots={spots} listId={LIST_ID} />));
     expect(screen.getByRole("heading", { name: "時間が足りず入らなかった場所" })).toBeInTheDocument();
-    expect(screen.getByText("嵐山")).toBeInTheDocument();
+    expect(screen.getByText("ひがし茶屋街")).toBeInTheDocument();
     expect(screen.getByText("時間が足りません")).toBeInTheDocument();
     expect(screen.getByText("移動時間は概算です")).toBeInTheDocument();
     expect(screen.getByTestId("route-map")).toHaveTextContent("発,1,2");
@@ -320,8 +320,8 @@ describe("PlanResultView", () => {
       ),
     );
 
-    expect(screen.getByRole("button", { name: "伏見稲荷大社を上へ" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "伏見稲荷大社を下へ" }));
+    expect(screen.getByRole("button", { name: "兼六園を上へ" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "兼六園を下へ" }));
 
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0].url).toBe("/api/v1/plans/recompute");
@@ -329,8 +329,8 @@ describe("PlanResultView", () => {
 
     await waitFor(() => {
       const rows = within(screen.getByRole("list", { name: "訪問順" })).getAllByRole("listitem");
-      expect(rows[0]).toHaveTextContent("清水寺");
-      expect(rows[1]).toHaveTextContent("伏見稲荷大社");
+      expect(rows[0]).toHaveTextContent("金沢城公園");
+      expect(rows[1]).toHaveTextContent("兼六園");
     });
     expect(onResultChange).toHaveBeenCalledWith(recomputed);
     expect(screen.queryByRole("heading", { name: "時間が足りず入らなかった場所" })).not.toBeInTheDocument();
@@ -348,7 +348,7 @@ describe("PlanResultView", () => {
     );
     render(wrap(<PlanResultView params={params} result={result} spots={spots} listId={LIST_ID} />));
     fireEvent.click(screen.getAllByRole("button", { name: "変更" })[0]);
-    fireEvent.change(screen.getByRole("combobox", { name: "伏見稲荷大社の滞在時間" }), {
+    fireEvent.change(screen.getByRole("combobox", { name: "兼六園の滞在時間" }), {
       target: { value: "90" },
     });
     await waitFor(() => expect(calls).toHaveLength(1));
@@ -370,7 +370,7 @@ describe("PlanResultView", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "保存" })).toBeEnabled();
 
-    fireEvent.click(screen.getByRole("button", { name: "伏見稲荷大社を下へ" }));
+    fireEvent.click(screen.getByRole("button", { name: "兼六園を下へ" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("終了時刻 18:00 を超えています（終了 18:40）");
     expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
   });
@@ -422,7 +422,7 @@ describe("PlanResultView", () => {
         />,
       ),
     );
-    expect(screen.queryByRole("button", { name: "伏見稲荷大社を下へ" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "兼六園を下へ" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "保存" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "削除" }));
     const dialog = await screen.findByRole("dialog");

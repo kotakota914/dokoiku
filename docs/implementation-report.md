@@ -39,13 +39,13 @@ npm install
 npm run dev                 # http://localhost:3000
 ```
 
-ログインは `/login` の「開発用ログイン」からユーザーを選ぶ。初期データは京都市内 42 スポット・約 300 投稿（写真は自動生成のプレースホルダー）。Supabase を使う場合は `docs/supabase-setup.md`。
+ログインは `/login` の「開発用ログイン」からユーザーを選ぶ。初期データは金沢市・野々市市の 44 スポット（金沢工業大学 扇が丘キャンパスの学内スポット 8 件を含む）・約 350 投稿。元データは `seed-data/kanazawa/spots.json`（memory の seed・`supabase/seed.sql`・写真取得ツールの共通ソース）。写真は `seed-data/kanazawa/photos.json` にあれば `public/seed/photos/` の実写真、無ければ自動生成のプレースホルダー。Supabase を使う場合は `docs/supabase-setup.md`。
 
 ## 4. 未確認・既知の制約（優先度順）
 
 1. **Supabase モードは実環境で未検証。** migration・RLS・RPC はローカル PostGIS で検証したが、Supabase プロジェクト、Google ログイン（`/auth/callback`）、Storage への署名付きアップロード、退会時の `auth.admin.deleteUser` は未接続。Hack Day 前に 1 度つないで確認すること。
 2. **外部 API（OpenRouteService / Nominatim）は未検証。** 開発環境から到達できなかったため、代替動作（直線距離×係数の概算、自前 DB 検索）だけを確認した。キーを設定したら経路作成と場所検索を実際に試すこと。
-3. **初期データの写真はプレースホルダー。** memory モードは SVG を動的生成、`supabase/seed.sql` はパスだけ登録している。デモ前に自分たちで撮った写真に差し替える（Q16）。
+3. **初期データの写真は `photos.json` が無い間はプレースホルダー。** memory モードは SVG を動的生成、`supabase/seed.sql` は `seed/photos/<key>/<n>.webp` の予定パスだけ登録している。写真取得ツールで `public/seed/photos/` と `photos.json` を作ると実写真になる。金沢工業大学の学内スポット（`commons: null`）はチームで撮影して差し替える（Q16）。
 4. **GitHub Actions は未実行。** secrets（DB 接続、R2、Webhook）を設定してから手動実行で確認する。`.github/workflows/` はリポジトリ直下に置く前提。
 5. **存在しないスポットの HTTP ステータスは 200**（ルートの `loading.tsx` によるストリーミングのため）。表示は「このスポットは見つかりませんでした」になる。
 6. **レート制限はサーバーインスタンス内のメモリ**で行う（投稿数は DB でも確認）。Vercel の複数インスタンスでは厳密でない。
@@ -59,4 +59,4 @@ npm run dev                 # http://localhost:3000
 - **フロント担当**：デザイントークンは `src/app/globals.css`（メインカラーは仮の空色、コントラスト 4.5 以上に調整済み）。部品は `src/components/ui`。
 - **API / データ担当**：画面・API は `src/lib/repo/types.ts` の Repository 契約だけに依存する。Supabase 側の追加は `supabase/migrations/` と `src/lib/repo/supabase/`。
 - **運用担当**：`docs/setup.md` の環境変数・secrets 一覧と無料枠の確認項目（14章）。
-- **デモ導線**：地図（京都にズーム）→ 写真ピン → 詳細 → 「行きたい場所リストに追加」→ リスト詳細 → 「経路を作成」→ タイムライン → 保存。E2E の `e2e/list-plan.spec.ts` がそのまま台本になる。
+- **デモ導線**：地図（金沢にズーム）→ 写真ピン → 詳細 → 「行きたい場所リストに追加」→ リスト詳細 → 「経路を作成」→ タイムライン → 保存。E2E の `e2e/list-plan.spec.ts` がそのまま台本になる。

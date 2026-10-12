@@ -168,6 +168,11 @@ function isSeedPath(p: string): boolean {
   return p.startsWith("seed/");
 }
 
+/** 初期データの実写真（public/seed/photos/ の静的ファイル。写真取得ツールが置く） */
+function isSeedPhotoPath(p: string): boolean {
+  return p.startsWith("seed/photos/");
+}
+
 // ---------- 実装 ----------
 
 class MemoryRepositoryImpl implements MemoryRepository {
@@ -1089,7 +1094,7 @@ class MemoryRepositoryImpl implements MemoryRepository {
           await fsp.rm(path.join(uploadsDir(), rel), { force: true });
         }
       },
-      publicUrl: (p) => `/api/dev/files/${p}`,
+      publicUrl: (p) => (isSeedPhotoPath(p) ? `/${p}` : `/api/dev/files/${p}`),
       deleteStaleTmp: async (olderThanHours: number, now: Date = new Date()) => {
         const threshold = now.getTime() - olderThanHours * 3_600_000;
         for (const [token, t] of [...this.uploadTokens])

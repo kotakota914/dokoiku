@@ -82,15 +82,15 @@ afterEach(() => {
 
 describe("リストの作成・一覧・名前変更・削除（F-4-1）", () => {
   it("作成したリストが一覧に出て、名前変更と削除ができる", async () => {
-    const list = await createWishlist(repo, USER_A, { name: "京都1日目" });
-    expect(list).toMatchObject({ userId: USER_A, name: "京都1日目", shareToken: null, itemCount: 0 });
+    const list = await createWishlist(repo, USER_A, { name: "金沢1日目" });
+    expect(list).toMatchObject({ userId: USER_A, name: "金沢1日目", shareToken: null, itemCount: 0 });
     expect((await listWishlists(repo, USER_A)).lists.map((l) => l.id)).toEqual([list.id]);
     expect((await listWishlists(repo, USER_B)).lists).toEqual([]);
 
-    const renamed = await renameWishlist(repo, USER_A, list.id, { name: "京都2日目" });
-    expect(renamed.name).toBe("京都2日目");
+    const renamed = await renameWishlist(repo, USER_A, list.id, { name: "金沢2日目" });
+    expect(renamed.name).toBe("金沢2日目");
     const detail = await getOwnedWishlist(repo, USER_A, list.id);
-    expect(detail).toMatchObject({ id: list.id, name: "京都2日目", items: [], plans: [] });
+    expect(detail).toMatchObject({ id: list.id, name: "金沢2日目", items: [], plans: [] });
 
     await deleteWishlist(repo, USER_A, list.id);
     await expectApiError(getOwnedWishlist(repo, USER_A, list.id), 404);
