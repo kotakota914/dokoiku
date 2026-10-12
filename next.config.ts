@@ -5,6 +5,9 @@ const nextConfig: NextConfig = {
   // リクエスト時レンダリングに統一して実装を単純にする（docs/decisions.md 参照）。
   cacheComponents: false,
   turbopack: {
+    // 親フォルダに別の package-lock.json があっても、このフォルダをワークスペースの基準にする
+    // （Next.js が「ignored package-lock.json ... outside the current Git repository」と警告するのを防ぐ）
+    root: process.cwd(),
     rules: {
       "*.css": {
         loaders: ["@tailwindcss/turbopack"],
