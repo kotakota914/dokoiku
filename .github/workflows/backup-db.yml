@@ -39,6 +39,9 @@ env:
 
 jobs:
   backup:
+    # リポジトリ変数 OPS_ENABLED が true のときだけ実行する（secrets 未設定のうちは失敗通知を出さない）。
+    # 有効化: Settings > Secrets and variables > Actions > Variables に OPS_ENABLED = true を追加
+    if: ${{ vars.OPS_ENABLED == 'true' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

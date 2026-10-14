@@ -62,6 +62,8 @@ Hobby プランの注意
 
 ## 4. GitHub Actions（定期処理）
 
+> **既定では定期実行は無効。** secrets を設定したうえで、リポジトリの Settings > Secrets and variables > Actions > **Variables** に `OPS_ENABLED` = `true` を追加すると毎日動き始める。未設定のあいだは各ワークフローがスキップされ、失敗通知は来ない（手動実行 Run workflow は常に可能）。
+
 `.github/workflows/` の 4 つのワークフローは **リポジトリ直下** に置く前提（このアプリをリポジトリのルートにする）。サブディレクトリに置く場合は `cleanup.yml` の `working-directory` を調整する。cron はすべて UTC で書いてある。
 
 | ワークフロー              | 実行          | 内容                                                                                                                                                                       |
