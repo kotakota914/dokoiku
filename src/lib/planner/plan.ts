@@ -1,33 +1,29 @@
 /**
- * 11.4〜11.7：訪問順の探索と、入りきらないスポットの除外。
- * 1. 行列に区間が無いスポット（no_route）と、その日が定休日などで入れないスポット（opening_hours）を先に外す。
- * 2. 候補順を作り、feasible なものから点数最小を採用する。
- * 3. 残らなければ、「必ず行きたい」以外から外したときに点数が最も良くなるものを 1 つ外して繰り返す（time_limit）。
- *    どれを外すかの比較は、残りが多いときは 2-opt 系の候補だけで行い、外したあとの集合だけを全探索する
- *    （10 か所で終了時刻が厳しいときに 9 × 8! 回の計算を避ける。F-5 受け入れ基準の 5 秒以内）。
- * 4. 「必ず行きたい」だけでも入らなければ items を空にし、全スポットを time_limit で skipped にする。
+ * 11.2：訪問順の全探索と、入りきらないスポットの除外、最大 3 案の選択。
+ * 1. 除外指定（preferences.exclude → excluded）、行列に区間が無いスポット（no_route）、
+ *    その日が定休日などで入れないスポット（opening_hours）を先に外す。
+ * 2. 残りの訪問順を全通り作り、順番の希望を満たさない順・終了時刻を超える順・時刻の指定を守れない順を除く。
+ * 3. 1 つも残らなければ、「必ず行きたい」以外から外したときに点数が最も良くなるものを 1 つ外して 2 へ戻る（time_limit）。
+ *    「必ず行きたい」だけでも入らなければ候補 0 件にし、全スポットを time_limit で skipped にする。
+ * 4. 残った順に点数（11.3）を付け、特徴の異なる最大 3 案（11.4）を返す。
  */
-import type { SkipReason } from "@/lib/domain/types";
+import type { LatLng, PlanCandidate, SkipReason } from "@/lib/domain/types";
 import { spotKey } from "@/lib/utils/geo";
 import { hhmmToMinutes, jstWeekday, minutesToHHMM } from "@/lib/utils/time";
-import { buildSchedule, type ScheduleResult } from "./schedule";
-import { candidateOrders, heuristicOrders, type SearchContext } from "./search";
+import { notesFor, reasonFor, selectCandidates, type Evaluated } from "./candidates";
+import { materialize, prepareSpots, simulate, type PreparedSpot, type ScheduleOptions } from "./schedule";
 import { score } from "./score";
+import { applicableHints, permutations, satisfiesHints } from "./search";
 import type { PlannerInput, PlannerOutput, PlannerSpot, TravelMatrix } from "./types";
-
-/** 候補集合の評価結果 */
-interface Evaluation {
-  /** feasible な最良の順と結果。無ければ null */
-  best: { order: PlannerSpot[]; result: ScheduleResult } | null;
-  /** feasible が無いときの比較用（超過分を大きく罰した点数） */
-  penalized: number;
-}
 
 /** feasible でない候補の比較用：点数に終了時刻の超過分を大きく加える */
 const INFEASIBLE_PENALTY = 1_000_000;
 
-/** 外す候補の比較で全探索を使う残りスポット数の上限（これを超えると 2-opt 系の候補だけで比較する） */
-const EXHAUSTIVE_COMPARE_MAX_SPOTS = 6;
+interface Evaluation {
+  feasible: Evaluated[];
+  /** feasible が無いときの比較用（超過分を大きく罰した点数）。feasible があれば最良の点数 */
+  penalized: number;
+}
 
 function hasLeg(matrix: TravelMatrix, from: string, to: string): boolean {
   return from === to || matrix.has(`${from}|${to}`);
@@ -39,7 +35,7 @@ function hasLeg(matrix: TravelMatrix, from: string, to: string): boolean {
  */
 export function removeUnreachable(
   spots: readonly PlannerSpot[],
-  ctx: SearchContext,
+  ctx: { matrix: TravelMatrix; originKey: string; destinationKey: string | null },
 ): { kept: PlannerSpot[]; removed: PlannerSpot[] } {
   const kept = spots.slice();
   const removed: PlannerSpot[] = [];
@@ -93,102 +89,131 @@ export function removeClosed(
   return { kept, removed };
 }
 
-/**
- * 候補集合を評価する。quick=true は外す候補の比較用で、全順列の代わりに 2-opt 系の候補だけを使う
- * （feasible が見つかれば十分に良い順なので、その集合は呼び出し側で改めて全探索する）。
- */
-function evaluate(
-  spots: readonly PlannerSpot[],
-  input: PlannerInput,
-  ctx: SearchContext,
-  quick = false,
-): Evaluation {
-  const opts = {
+/** 集合の全順列を評価する（順番の希望を満たさない順は数えない） */
+function evaluate(spots: readonly PreparedSpot[], input: PlannerInput, opts: ScheduleOptions): Evaluation {
+  const ids = new Set(spots.map((p) => p.spot.id));
+  const hints = applicableHints(input.preferences.orderHints, ids);
+  const priority = input.preferences.priority;
+  const feasible: Evaluated[] = [];
+  let penalized = Number.POSITIVE_INFINITY;
+  for (const order of permutations(spots)) {
+    const orderIds = order.map((p) => p.spot.id);
+    if (!satisfiesHints(orderIds, hints)) continue;
+    const sim = simulate(order, opts);
+    const sc = score(
+      {
+        totalTravelMin: sim.totalTravelMin,
+        offBestMinutes: sim.offBestMinutes,
+        walkM: sim.walkM,
+        spotCount: order.length,
+      },
+      priority,
+    );
+    if (sim.feasible) {
+      feasible.push({ order, ids: orderIds, sim, score: sc });
+    } else {
+      const over = Math.max(0, sim.endMin - input.endMin);
+      const p = sc + INFEASIBLE_PENALTY + over * 1000;
+      if (p < penalized) penalized = p;
+    }
+  }
+  if (feasible.length > 0) {
+    penalized = Number.POSITIVE_INFINITY;
+    for (const f of feasible) if (f.score < penalized) penalized = f.score;
+  }
+  return { feasible, penalized };
+}
+
+function geometryOf(
+  input: Pick<PlannerInput, "origin" | "destination">,
+  order: readonly PreparedSpot[],
+): PlanCandidate["geometry"] {
+  if (order.length === 0) return null;
+  const points: LatLng[] = [];
+  if (input.origin) points.push(input.origin);
+  for (const p of order) points.push({ lat: p.spot.lat, lng: p.spot.lng });
+  if (input.destination) points.push(input.destination);
+  return { type: "LineString", coordinates: points.map((p) => [p.lng, p.lat]) };
+}
+
+export function planRoute(input: PlannerInput): PlannerOutput {
+  const opts: ScheduleOptions = {
     startMin: input.startMin,
     endMin: input.endMin,
     originKey: input.originKey,
     destinationKey: input.destinationKey,
     lunchBreak: input.lunchBreak,
     date: input.date,
+    mode: input.mode,
     stayOverrides: input.stayOverrides,
     matrix: input.matrix,
-    interests: input.interests,
-    pace: input.pace,
-  };
-  let candidates: PlannerSpot[][];
-  if (input.fixedOrder) {
-    const byId = new Map(spots.map((s) => [s.id, s]));
-    const ordered = input.fixedOrder.map((id) => byId.get(id)).filter((s): s is PlannerSpot => !!s);
-    // fixedOrder に無いスポットは末尾に付ける
-    const rest = spots.filter((s) => !input.fixedOrder!.includes(s.id));
-    candidates = [ordered.concat(rest)];
-  } else {
-    candidates = quick ? heuristicOrders(spots, ctx) : candidateOrders(spots, ctx);
-  }
-
-  let best: Evaluation["best"] = null;
-  let bestScore = Number.POSITIVE_INFINITY;
-  let penalized = Number.POSITIVE_INFINITY;
-  for (const order of candidates) {
-    const result = buildSchedule(order, opts);
-    const sc = score(result);
-    if (result.feasible) {
-      if (sc < bestScore) {
-        bestScore = sc;
-        best = { order, result };
-      }
-    } else {
-      const over = Math.max(0, result.endMin - input.endMin);
-      const p = sc + INFEASIBLE_PENALTY + over * 1000;
-      if (p < penalized) penalized = p;
-    }
-  }
-  if (best) penalized = bestScore;
-  return { best, penalized };
-}
-
-export function planRoute(input: PlannerInput): PlannerOutput {
-  const ctx: SearchContext = {
-    matrix: input.matrix,
-    originKey: input.originKey,
-    destinationKey: input.destinationKey,
+    preferences: input.preferences,
   };
   const skipped: { spotId: string; reason: SkipReason }[] = [];
 
-  const closed = removeClosed(input.spots, input.date, input.startMin, input.endMin);
+  const exclude = new Set(input.preferences.exclude);
+  const selected = input.spots.filter((s) => {
+    if (!exclude.has(s.id)) return true;
+    skipped.push({ spotId: s.id, reason: "excluded" });
+    return false;
+  });
+  const targetCount = selected.length;
+  const closed = removeClosed(selected, input.date, input.startMin, input.endMin);
   for (const s of closed.removed) skipped.push({ spotId: s.id, reason: "opening_hours" });
-  const reach = removeUnreachable(closed.kept, ctx);
+  const reach = removeUnreachable(closed.kept, opts);
   for (const s of reach.removed) skipped.push({ spotId: s.id, reason: "no_route" });
 
-  let active = reach.kept;
-  let ev = evaluate(active, input, ctx);
-  while (!ev.best) {
-    const optional = active.filter((s) => !s.mustVisit);
+  let active = prepareSpots(reach.kept, opts);
+  // 回れるスポットが 1 つも無い（すべて除外・削除・経路なし）なら案は出さない
+  if (active.length === 0) return { candidates: [], skipped };
+  let ev = evaluate(active, input, opts);
+  while (ev.feasible.length === 0) {
+    const optional = active.filter((p) => !p.spot.mustVisit);
     if (optional.length === 0) {
-      // 「必ず行きたい」だけでも入らない（API 側で「終了時刻を延ばすか、スポットを減らしてください」にする）
-      for (const s of active) skipped.push({ spotId: s.id, reason: "time_limit" });
-      return { items: [], skipped, totalTravelMin: 0, endAt: minutesToHHMM(input.startMin) };
+      // 「必ず行きたい」だけでも入らない（画面は「終了時刻を延ばすか、スポットを減らしてください」）
+      for (const p of active) skipped.push({ spotId: p.spot.id, reason: "time_limit" });
+      return { candidates: [], skipped };
     }
-    const quick = active.length - 1 > EXHAUSTIVE_COMPARE_MAX_SPOTS;
-    let chosen: { spot: PlannerSpot; ev: Evaluation } | null = null;
-    for (const s of optional) {
-      const rest = active.filter((x) => x !== s);
-      const e = evaluate(rest, input, ctx, quick);
-      if (!chosen || e.penalized < chosen.ev.penalized) chosen = { spot: s, ev: e };
+    let chosen: { spot: PreparedSpot; rest: PreparedSpot[]; ev: Evaluation } | null = null;
+    for (const p of optional) {
+      const rest = active.filter((x) => x !== p);
+      const e = evaluate(rest, input, opts);
+      if (
+        !chosen ||
+        e.penalized < chosen.ev.penalized ||
+        (e.penalized === chosen.ev.penalized && p.spot.id < chosen.spot.spot.id)
+      ) {
+        chosen = { spot: p, rest, ev: e };
+      }
     }
-    // optional.length > 0 なので chosen は必ずある
     const c = chosen!;
-    skipped.push({ spotId: c.spot.id, reason: "time_limit" });
-    active = active.filter((x) => x !== c.spot);
-    // 比較を 2-opt 系で行ったときは、残った集合を改めて全探索（8 か所以下なら全順列）で評価する
-    ev = quick ? evaluate(active, input, ctx) : c.ev;
+    skipped.push({ spotId: c.spot.spot.id, reason: "time_limit" });
+    active = c.rest;
+    ev = c.ev;
+    if (active.length === 0) return { candidates: [], skipped };
   }
 
-  const { result } = ev.best;
-  return {
-    items: result.items,
-    skipped,
-    totalTravelMin: result.totalTravelMin,
-    endAt: minutesToHHMM(result.endMin),
-  };
+  const candidates = selectCandidates(ev.feasible, input.preferences.priority).map(
+    (sel, i): PlanCandidate => {
+      const { sim, order } = sel.ev;
+      return {
+        id: `c${i + 1}`,
+        kind: sel.kind,
+        label: sel.label,
+        reason: reasonFor(sel.kind, sel.ev, targetCount),
+        items: materialize(order, sim, opts),
+        skipped: skipped.slice(),
+        notes: notesFor(sim, input.mode),
+        stats: {
+          spotCount: order.length,
+          totalTravelMin: sim.totalTravelMin,
+          walkM: Math.round(sim.walkM),
+          endAt: minutesToHHMM(sim.endMin),
+          bestTimeHits: sim.bestTimeHits,
+        },
+        geometry: geometryOf(input, order),
+      };
+    },
+  );
+  return { candidates, skipped };
 }

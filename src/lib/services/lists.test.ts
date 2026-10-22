@@ -5,7 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { ApiError } from "@/lib/api/errors";
 import { LIMITS } from "@/lib/domain/constants";
+import type { LatLng, Wishlist } from "@/lib/domain/types";
 import { createMemoryRepository, SEED_USER_IDS } from "@/lib/repo/memory";
+import type { Repository, WishlistsRepo } from "@/lib/repo/types";
 import {
   ALREADY_ADDED_MESSAGE,
   ITEMS_LIMIT_MESSAGE,
@@ -23,9 +25,44 @@ import {
   shareWishlist,
   sharedListUrl,
   unshareWishlist,
+  updateWishlist,
 } from "./lists";
 
 vi.mock("server-only", () => ({}));
+
+type BaseInput = { label: string; location: LatLng } | null;
+
+/**
+ * v0.3 F-4-8 の拠点。`WishlistsRepo.setBase` は data 担当が実装中なので、
+ * ここでは Repository の契約どおりに振る舞うモック（保存した拠点を getById にも反映する）で差し替える。
+ */
+function withBase(base: Repository): Repository & { setBase: ReturnType<typeof vi.fn> } {
+  const bases = new Map<string, BaseInput>();
+  const applyBase = <T extends Wishlist>(list: T): T => {
+    const b = bases.get(list.id);
+    if (b === undefined) return list;
+    return { ...list, baseLabel: b?.label ?? null, baseLocation: b?.location ?? null };
+  };
+  const setBase = vi.fn(async (id: string, input: BaseInput): Promise<Wishlist> => {
+    const list = await base.wishlists.getById(id);
+    if (!list) throw new Error(`wishlist not found: ${id}`);
+    bases.set(id, input);
+    const { items, plans, ...rest } = applyBase(list);
+    void items;
+    void plans;
+    return rest;
+  });
+  const wishlists: WishlistsRepo = {
+    ...base.wishlists,
+    setBase,
+    getById: async (id) => {
+      const list = await base.wishlists.getById(id);
+      return list ? applyBase(list) : null;
+    },
+    rename: async (id, name) => applyBase(await base.wishlists.rename(id, name)),
+  };
+  return { ...base, wishlists, setBase };
+}
 
 /** 認証と Repository を差し替える（Route Handler のテスト用） */
 const authState: { userId: string | null } = { userId: null };
@@ -46,7 +83,7 @@ vi.mock("@/lib/auth/server", () => ({
     return { id: authState.userId, isAdmin: false };
   },
 }));
-let repo = createMemoryRepository(true, { persist: false });
+let repo: Repository = createMemoryRepository(true, { persist: false });
 vi.mock("@/lib/repo", () => ({ getRepo: async () => repo }));
 
 const USER_A = SEED_USER_IDS.userA;
@@ -316,5 +353,129 @@ describe("Route Handler", () => {
     expect(await gone.json()).toMatchObject({
       error: { code: "NOT_FOUND", message: SHARED_NOT_FOUND_MESSAGE },
     });
+  });
+});
+
+const STATION = { label: "金沢駅", location: { lat: 36.578, lng: 136.6478 } };
+
+describe("拠点の設定・変更・解除（v0.3 F-4-8、PATCH /lists/{listId}）", () => {
+  it("base を渡すと setBase が呼ばれ、更新後の Wishlist に拠点が入る。null で解除", async () => {
+    const r = withBase(repo);
+    const list = await createWishlist(r, USER_A, { name: "金沢" });
+    expect((await getOwnedWishlist(r, USER_A, list.id)).baseLabel ?? null).toBeNull();
+
+    const set = await updateWishlist(r, USER_A, list.id, { base: STATION });
+    expect(r.setBase).toHaveBeenCalledWith(list.id, STATION);
+    expect(set).toMatchObject({
+      id: list.id,
+      name: "金沢",
+      baseLabel: "金沢駅",
+      baseLocation: STATION.location,
+    });
+    // GET /lists/{listId} にも反映される
+    const detail = await getOwnedWishlist(r, USER_A, list.id);
+    expect(detail).toMatchObject({ baseLabel: "金沢駅", baseLocation: STATION.location });
+
+    const changed = await updateWishlist(r, USER_A, list.id, {
+      base: { label: "ホテル", location: { lat: 36.57, lng: 136.65 } },
+    });
+    expect(changed.baseLabel).toBe("ホテル");
+
+    const cleared = await updateWishlist(r, USER_A, list.id, { base: null });
+    expect(r.setBase).toHaveBeenLastCalledWith(list.id, null);
+    expect(cleared).toMatchObject({ baseLabel: null, baseLocation: null });
+  });
+
+  it("name と base を同時に渡すと両方が反映され、name だけなら setBase を呼ばない（互換）", async () => {
+    const r = withBase(repo);
+    const list = await createWishlist(r, USER_A, { name: "金沢" });
+    const both = await updateWishlist(r, USER_A, list.id, { name: "金沢1日目", base: STATION });
+    expect(both).toMatchObject({ name: "金沢1日目", baseLabel: "金沢駅" });
+    expect(r.setBase).toHaveBeenCalledTimes(1);
+
+    const renamed = await updateWishlist(r, USER_A, list.id, { name: "金沢2日目" });
+    expect(renamed).toMatchObject({ name: "金沢2日目", baseLabel: "金沢駅" });
+    expect(r.setBase).toHaveBeenCalledTimes(1);
+  });
+
+  it("memory Repository の setBase（data 担当の実装）でも設定・名前変更・解除が往復する", async () => {
+    const list = await createWishlist(repo, USER_A, { name: "金沢" });
+    expect(list).toMatchObject({ baseLabel: null, baseLocation: null });
+    expect(await updateWishlist(repo, USER_A, list.id, { name: "金沢1日目", base: STATION })).toMatchObject({
+      name: "金沢1日目",
+      baseLabel: "金沢駅",
+      baseLocation: STATION.location,
+    });
+    expect(await getOwnedWishlist(repo, USER_A, list.id)).toMatchObject({ baseLabel: "金沢駅" });
+    expect((await listWishlists(repo, USER_A)).lists[0]).toMatchObject({ baseLabel: "金沢駅" });
+    expect(await updateWishlist(repo, USER_A, list.id, { base: null })).toMatchObject({
+      name: "金沢1日目",
+      baseLabel: null,
+      baseLocation: null,
+    });
+  });
+
+  it("他人のリストは 403、存在しないリストは 404 で、setBase は呼ばれない", async () => {
+    const r = withBase(repo);
+    const list = await createWishlist(r, USER_A, { name: "A" });
+    await expectApiError(updateWishlist(r, USER_B, list.id, { base: STATION }), 403);
+    await expectApiError(updateWishlist(r, USER_A, UNKNOWN_ID, { base: STATION }), 404);
+    expect(r.setBase).not.toHaveBeenCalled();
+  });
+
+  it("PATCH /lists/{listId}：name / base / null を受け、不正な body は 400。外部 API は呼ばない", async () => {
+    const { GET, PATCH } = await import("@/app/api/v1/lists/[listId]/route");
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    repo = withBase(repo);
+    const list = await createWishlist(repo, USER_A, { name: "金沢" });
+    const ctx = { params: Promise.resolve({ listId: list.id }) };
+    const patch = (body: unknown) =>
+      PATCH(
+        new NextRequest(`http://localhost/api/v1/lists/${list.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+        ctx,
+      );
+
+    expect((await patch({ base: STATION })).status).toBe(401);
+
+    authState.userId = USER_B;
+    expect((await patch({ base: STATION })).status).toBe(403);
+
+    authState.userId = USER_A;
+    const set = await patch({ base: STATION });
+    expect(set.status).toBe(200);
+    expect(await set.json()).toMatchObject({
+      id: list.id,
+      baseLabel: "金沢駅",
+      baseLocation: STATION.location,
+    });
+
+    const detail = await GET(new NextRequest(`http://localhost/api/v1/lists/${list.id}`), ctx);
+    expect(await detail.json()).toMatchObject({ baseLabel: "金沢駅", baseLocation: STATION.location });
+
+    // v0.1 互換：name だけ
+    const renamed = await patch({ name: "金沢1日目" });
+    expect(renamed.status).toBe(200);
+    expect(await renamed.json()).toMatchObject({ name: "金沢1日目", baseLabel: "金沢駅" });
+
+    const cleared = await patch({ base: null });
+    expect(cleared.status).toBe(200);
+    expect(await cleared.json()).toMatchObject({ baseLabel: null, baseLocation: null });
+
+    for (const bad of [
+      {},
+      { base: { label: "", location: STATION.location } },
+      { base: { label: "x", location: { lat: 100, lng: 0 } } },
+      { base: { label: "x" } },
+      { name: "" },
+    ]) {
+      const res = await patch(bad);
+      expect(res.status, JSON.stringify(bad)).toBe(400);
+      expect(await res.json()).toMatchObject({ error: { code: "VALIDATION_ERROR" } });
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

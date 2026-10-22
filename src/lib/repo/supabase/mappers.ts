@@ -3,11 +3,19 @@
  * supabase-js の型生成は使わず、必要最小限の Row 型をここに手書きする。
  * server-only を import しないので vitest から直接テストできる。
  */
-import type { Category, ReportReason, StayDuration, TravelMode } from "@/lib/domain/types-reexport";
-import { popularityOf } from "@/lib/domain/constants";
+import type {
+  Category,
+  Popularity,
+  ReportReason,
+  StayDuration,
+  TravelMode,
+} from "@/lib/domain/types-reexport";
+import { popularityOf, TRAVEL_CACHE_DAYS, type PlanMethod } from "@/lib/domain/constants";
+import { normalizePlanParams, normalizePlanResult } from "../normalize";
 import type {
   ApiUsage,
   HeatPoint,
+  LatLng,
   NearbySpot,
   OpeningHours,
   Plan,
@@ -54,6 +62,8 @@ export interface SpotRow {
   stay_minutes_median: number | null;
   hour_histogram: number[] | null;
   opening_hours: OpeningHours | null;
+  /** v0.3 F-1-5：recompute_popularity() が更新する。古い行は null のことがある */
+  popularity?: Popularity | null;
   created_by: string | null;
   created_at: string;
 }
@@ -70,6 +80,7 @@ export interface SpotSummaryRow {
   prefecture: string | null;
   city: string | null;
   cover_thumb_path: string | null;
+  popularity?: Popularity | null;
 }
 
 export interface SpotSearchRow extends SpotSummaryRow {
@@ -121,6 +132,9 @@ export interface WishlistRow {
   id: string;
   user_id: string;
   name: string;
+  /** v0.3 F-4-8：拠点。base_location は PostGIS の hex EWKB（location と同じ読み方） */
+  base_label?: string | null;
+  base_location?: string | null;
   share_token: string | null;
   created_at: string;
 }
@@ -139,6 +153,8 @@ export interface PlanRow {
   params: PlanParams;
   result: PlanResult;
   total_travel_min: number;
+  /** v0.3：作り方。古い行は null → auto */
+  method?: PlanMethod | null;
   created_at: string;
 }
 
@@ -146,6 +162,8 @@ export interface TravelTimeCacheRow {
   from_key: string;
   to_key: string;
   mode: TravelMode;
+  /** 公共交通のみ使う出発時刻の区分。徒歩・車は "any" */
+  time_bucket?: string | null;
   duration_sec: number;
   distance_m: number;
   fetched_at: string;
@@ -262,6 +280,11 @@ export function mapSpot(row: SpotRow): Spot {
   };
 }
 
+/** 順位で計算した人気度（spots.popularity）を優先し、未計算（null）のときだけ件数しきい値で代替する */
+export function resolvePopularity(stored: Popularity | null | undefined, postCount: number): Popularity {
+  return stored ?? popularityOf(postCount);
+}
+
 /** RPC の要約行 → SpotSummary */
 export function mapSpotSummaryRow(row: SpotSummaryRow, publicUrl: PublicUrlFn): SpotSummary {
   const postCount = toNumber(row.post_count);
@@ -273,7 +296,7 @@ export function mapSpotSummaryRow(row: SpotSummaryRow, publicUrl: PublicUrlFn): 
     category: row.category,
     postCount,
     likeCount: toNumber(row.like_count),
-    popularity: popularityOf(postCount),
+    popularity: resolvePopularity(row.popularity, postCount),
     coverThumbUrl: row.cover_thumb_path ? publicUrl(row.cover_thumb_path) : null,
     prefecture: row.prefecture ?? null,
     city: row.city ?? null,
@@ -293,6 +316,7 @@ export function spotToSummary(
   spot: Spot,
   coverThumbPath: string | null,
   publicUrl: PublicUrlFn,
+  popularity: Popularity | null = null,
 ): SpotSummary {
   return {
     id: spot.id,
@@ -302,7 +326,7 @@ export function spotToSummary(
     category: spot.category,
     postCount: spot.postCount,
     likeCount: spot.likeCount,
-    popularity: popularityOf(spot.postCount),
+    popularity: resolvePopularity(popularity, spot.postCount),
     coverThumbUrl: coverThumbPath ? publicUrl(coverThumbPath) : null,
     prefecture: spot.prefecture,
     city: spot.city,
@@ -313,9 +337,10 @@ export function spotToDetail(
   spot: Spot,
   cover: { full_path: string; thumb_path: string } | null,
   publicUrl: PublicUrlFn,
+  popularity: Popularity | null = null,
 ): SpotDetail {
   return {
-    ...spotToSummary(spot, cover?.thumb_path ?? null, publicUrl),
+    ...spotToSummary(spot, cover?.thumb_path ?? null, publicUrl, popularity),
     address: spot.address,
     stayMinutesMedian: spot.stayMinutesMedian,
     hourHistogram: spot.hourHistogram,
@@ -366,11 +391,24 @@ export function mapPostView(row: PostJoinedRow, publicUrl: PublicUrlFn, likedByM
 }
 
 // ---------- リスト・プラン ----------
+/** base_location（hex EWKB）→ LatLng。無い・壊れているときは null（拠点なし扱い） */
+export function parseBaseLocation(value: string | null | undefined): LatLng | null {
+  if (!value) return null;
+  try {
+    return parseEwkbPoint(value);
+  } catch {
+    return null;
+  }
+}
+
 export function mapWishlist(row: WishlistRow, itemCount: number): Wishlist {
+  const baseLocation = parseBaseLocation(row.base_location);
   return {
     id: row.id,
     userId: row.user_id,
     name: row.name,
+    baseLabel: baseLocation && row.base_label ? row.base_label : null,
+    baseLocation,
     shareToken: row.share_token ?? null,
     createdAt: toIso(row.created_at),
     itemCount,
@@ -394,12 +432,16 @@ export function mapPlanSummary(row: PlanRow): PlanSummary {
     date: row.params?.date ?? "",
     spotCount: countPlanSpots(row.result, row.params),
     totalTravelMin: toNumber(row.total_travel_min),
+    method: row.method ?? row.params?.method ?? "auto",
     createdAt: toIso(row.created_at),
   };
 }
 
+/** v0.1 で保存した行（method / preferences / next / stats が無い）も v0.3 の形にそろえる */
 export function mapPlan(row: PlanRow): Plan {
-  return { ...mapPlanSummary(row), userId: row.user_id, params: row.params, result: row.result };
+  const params = normalizePlanParams(row.params);
+  const result = normalizePlanResult(row.result, params);
+  return { ...mapPlanSummary(row), userId: row.user_id, params, result };
 }
 
 // ---------- 無料枠・キャッシュ・通報 ----------
@@ -431,6 +473,7 @@ export function mapTravelTime(row: TravelTimeCacheRow): TravelTimeEntry {
     fromKey: row.from_key,
     toKey: row.to_key,
     mode: row.mode,
+    timeBucket: row.time_bucket || "any",
     durationSec: toNumber(row.duration_sec),
     distanceM: toNumber(row.distance_m),
     fetchedAt: toIso(row.fetched_at),
@@ -447,6 +490,12 @@ export function mapReport(row: ReportRow): Report {
     status: row.status,
     createdAt: toIso(row.created_at),
   };
+}
+
+/** mode ごとの期限（10.2）より前の fetched_at を ISO 文字列で返す（getMany / purgeExpired の境界） */
+export function travelCacheCutoff(mode: TravelMode, now: Date = new Date(), olderThanDays?: number): string {
+  const days = olderThanDays ?? TRAVEL_CACHE_DAYS[mode];
+  return new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
 }
 
 // ---------- カーソル ----------

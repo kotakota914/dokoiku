@@ -223,7 +223,135 @@ reset role;
 delete from auth.users where id in ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
 do $$ begin perform public.recompute_spot_stats((select id from public.spots where name = '兼六園')); end; $$;
 
--- ---------- 7. Storage（0002 を流した場合のみ） ----------
+-- ---------- 7. v0.3：人気度（相対順位）、seed の source、拠点、plans.method、travel_time_cache ----------
+do $$
+declare
+  v_top text;
+  v_single text;
+  v_very int;
+  v_popular int;
+  v_normal int;
+  v_kanazawa int;
+  v_changed int;
+  v_seed int;
+  v_total int;
+begin
+  -- seed のスポットはすべて source = 'seed'（10.5）
+  select count(*) filter (where source = 'seed'), count(*) into v_seed, v_total from public.spots;
+  if v_seed <> v_total then
+    raise exception 'spots.source: seed のはずが % / %', v_seed, v_total;
+  end if;
+
+  -- 2 回目の再計算では何も変わらない（seed.sql で計算済み）
+  select public.recompute_popularity() into v_changed;
+  if v_changed <> 0 then
+    raise exception 'recompute_popularity: 2 回目で % 件変わった', v_changed;
+  end if;
+
+  -- 投稿が最多（兼六園）は大人気、投稿 1 件のスポットは通常
+  select popularity into v_top from public.spots order by post_count desc limit 1;
+  if v_top <> 'very_popular' then
+    raise exception 'recompute_popularity: 投稿最多のスポットが % になっている', v_top;
+  end if;
+  select popularity into v_single from public.spots where post_count = 1 limit 1;
+  if v_single is not null and v_single <> 'normal' then
+    raise exception 'recompute_popularity: 投稿 1 件のスポットが % になっている', v_single;
+  end if;
+
+  -- 金沢市（10 件以上）：上位 10%（切り上げ）が大人気、上位 30% までが人気（同数は同順位なので以上）
+  select count(*),
+         count(*) filter (where popularity = 'very_popular'),
+         count(*) filter (where popularity = 'popular'),
+         count(*) filter (where popularity = 'normal')
+    into v_kanazawa, v_very, v_popular, v_normal
+    from public.spots where city = '金沢市' and post_count > 0;
+  if v_kanazawa < 10 then
+    raise exception 'recompute_popularity: 金沢市のスポットが % 件（10 件以上のはず）', v_kanazawa;
+  end if;
+  if v_very < ceil(v_kanazawa * 0.1) or v_very + v_popular < ceil(v_kanazawa * 0.3) or v_normal = 0 then
+    raise exception 'recompute_popularity: 金沢市 % 件の内訳が不正（大人気 %、人気 %、通常 %）', v_kanazawa, v_very, v_popular, v_normal;
+  end if;
+  -- RPC の要約行に popularity が入る
+  if not exists (select 1 from public.spots_in_bbox(136.55, 36.48, 136.75, 36.65) where popularity = 'very_popular') then
+    raise exception 'spots_in_bbox: popularity 列が返っていない';
+  end if;
+  if not exists (select 1 from public.spots_search(p_keyword => '兼六園', p_limit => 5) where popularity = 'very_popular') then
+    raise exception 'spots_search: popularity 列が返っていない';
+  end if;
+  raise notice 'ok: recompute_popularity（金沢市 % 件：大人気 %、人気 %、通常 %）と source=seed', v_kanazawa, v_very, v_popular, v_normal;
+end;
+$$;
+
+-- 拠点・plans.method・travel_time_cache の列と制約
+do $$
+declare
+  v_list_id uuid;
+  v_lat float8;
+  v_lng float8;
+  v_label text;
+  v_count int;
+begin
+  insert into auth.users (id, email, raw_user_meta_data) values
+    ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'v03@example.com', '{}'::jsonb)
+  on conflict (id) do nothing;
+  insert into public.profiles (id, display_name) values ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'v0.3検証')
+  on conflict (id) do nothing;
+  insert into public.wishlists (user_id, name, base_label, base_location)
+  values ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', '拠点つき', '金沢駅', st_setsrid(st_makepoint(136.6478, 36.578), 4326)::geography)
+  returning id into v_list_id;
+  select base_label, st_y(base_location::geometry), st_x(base_location::geometry)
+    into v_label, v_lat, v_lng from public.wishlists where id = v_list_id;
+  if v_label <> '金沢駅' or abs(v_lat - 36.578) > 1e-6 or abs(v_lng - 136.6478) > 1e-6 then
+    raise exception 'wishlists.base_*: % (%, %)', v_label, v_lat, v_lng;
+  end if;
+  -- 名前だけ・位置だけは不可
+  begin
+    update public.wishlists set base_location = null where id = v_list_id;
+    raise exception 'wishlists_base_pair_check が効いていない';
+  exception when check_violation then
+    null;
+  end;
+  update public.wishlists set base_label = null, base_location = null where id = v_list_id;
+
+  -- plans.method
+  insert into public.plans (wishlist_id, user_id, params, result, total_travel_min, method)
+  values (v_list_id, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', '{}'::jsonb, '{}'::jsonb, 0, 'chat');
+  insert into public.plans (wishlist_id, user_id, params, result, total_travel_min)
+  values (v_list_id, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', '{}'::jsonb, '{}'::jsonb, 0);
+  select count(*) into v_count from public.plans where wishlist_id = v_list_id and method in ('chat', 'auto');
+  if v_count <> 2 then
+    raise exception 'plans.method: % 件', v_count;
+  end if;
+  begin
+    insert into public.plans (wishlist_id, user_id, params, result, total_travel_min, method)
+    values (v_list_id, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', '{}'::jsonb, '{}'::jsonb, 0, 'magic');
+    raise exception 'plans_method_check が効いていない';
+  exception when check_violation then
+    null;
+  end;
+
+  -- travel_time_cache：transit を time_bucket ごとに保存できる
+  insert into public.travel_time_cache (from_key, to_key, mode, time_bucket, duration_sec, distance_m) values
+    ('s:a', 's:b', 'transit', 'weekday-09', 900, 3000),
+    ('s:a', 's:b', 'transit', 'holiday-09', 1200, 3000),
+    ('s:a', 's:b', 'walking', 'any', 2400, 3000);
+  select count(*) into v_count from public.travel_time_cache where from_key = 's:a' and to_key = 's:b';
+  if v_count <> 3 then
+    raise exception 'travel_time_cache: 主キー (from_key, to_key, mode, time_bucket) で 3 件のはずが % 件', v_count;
+  end if;
+  delete from public.travel_time_cache where from_key = 's:a';
+
+  -- api_usage：v0.3 の feature
+  perform public.increment_api_usage('google_routes', 'route_planning_transit', '2026-10', 10000, 12);
+  perform public.increment_api_usage('gemini', 'ai_chat', '2026-10-10', 1000);
+  delete from public.api_usage where provider in ('google_routes', 'gemini');
+
+  delete from auth.users where id = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  raise notice 'ok: wishlists.base_*、plans.method、travel_time_cache.time_bucket、api_usage.feature';
+end;
+$$;
+
+-- ---------- 8. Storage（0002 を流した場合のみ） ----------
 do $$
 begin
   if exists (select 1 from storage.buckets where id = 'post-images' and public) then

@@ -165,6 +165,77 @@ describe("isSuspended / getSystemStatus", () => {
   });
 });
 
+describe("v0.3：組み合わせ件数・モック・capabilities", () => {
+  const CONFIG = {
+    nominatimEnabled: true,
+    orsApiKey: undefined,
+    googleRoutesApiKey: undefined,
+    geminiApiKey: undefined,
+    externalApiMock: false,
+    backend: "memory" as const,
+  };
+
+  it("Google Routes は組み合わせの件数で数える（月単位）", async () => {
+    const repo = fakeUsageRepo();
+    const notify = notifySpy();
+    await checkAndCount(repo, "google_routes_transit", 90, { now: NOW, notify });
+    await checkAndCount(repo, "google_routes_transit", 6, { now: NOW, notify });
+    const { provider, feature } = USAGE_LIMITS.google_routes_transit;
+    expect((await repo.get(provider, feature, "2026-10"))?.count).toBe(96);
+    expect(feature).toBe("route_planning_transit");
+  });
+
+  it("80% を超える件数をまとめて加えると停止する（feature: route_planning_transit）", async () => {
+    const repo = fakeUsageRepo();
+    const { provider, feature, limit } = USAGE_LIMITS.google_routes_transit;
+    await repo.set(provider, feature, "2026-10", suspendThreshold(limit) - 50, limit);
+    await expect(
+      checkAndCount(repo, "google_routes_transit", 90, { now: NOW, notify: notifySpy() }),
+    ).rejects.toMatchObject({ code: "FEATURE_SUSPENDED", details: { feature: "route_planning_transit" } });
+  });
+
+  it("モック中は数えない（F-8-8）", async () => {
+    const repo = fakeUsageRepo();
+    const u = await checkAndCount(repo, "gemini", 1, { now: NOW, notify: notifySpy(), mock: true });
+    expect(u.count).toBe(0);
+    expect(repo.rows.size).toBe(0);
+  });
+
+  it("capabilities：キーあり（またはモック）かつ停止中でないとき true", async () => {
+    const repo = fakeUsageRepo();
+    expect((await getSystemStatus(repo, NOW, CONFIG)).capabilities).toMatchObject({
+      routing: false,
+      transit: false,
+      ai: false,
+    });
+    const keys = { ...CONFIG, orsApiKey: "o", googleRoutesApiKey: "g", geminiApiKey: "m" };
+    expect((await getSystemStatus(repo, NOW, keys)).capabilities).toMatchObject({
+      routing: true,
+      transit: true,
+      ai: true,
+    });
+    expect(
+      (await getSystemStatus(repo, NOW, { ...CONFIG, externalApiMock: true })).capabilities,
+    ).toMatchObject({
+      routing: true,
+      transit: true,
+      ai: true,
+    });
+    await repo.set("google_routes", "route_planning_transit", "2026-10", 8000, 10000);
+    await repo.setSuspended(
+      "google_routes",
+      "route_planning_transit",
+      "2026-10",
+      "2026-10-10T10:00:00.000+09:00",
+    );
+    await repo.set("gemini", "ai_chat", "2026-10-10", 800, 1000);
+    await repo.setSuspended("gemini", "ai_chat", "2026-10-10", "2026-10-10T10:00:00.000+09:00");
+    const status = await getSystemStatus(repo, NOW, keys);
+    expect(status.capabilities).toMatchObject({ routing: true, transit: false, ai: false });
+    expect(status.suspended.map((s) => s.feature).sort()).toEqual(["ai_chat", "route_planning_transit"]);
+  });
+});
+
 describe("recordAbsoluteUsage（Q4：Supabase の容量）", () => {
   it("80% を超えたら停止して通知、下回れば再開して通知、変化がなければ何もしない", async () => {
     const repo = fakeUsageRepo();

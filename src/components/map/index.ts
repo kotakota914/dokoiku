@@ -3,7 +3,7 @@
  * 直接 SpotMap が必要なクライアント部品は "./SpotMap" を import する。
  */
 export { default as SpotMapLazy, MapSkeleton } from "./SpotMapLazy";
-export type { SpotMapProps, RouteGeometry } from "./SpotMap";
+export type { SpotMapProps, RouteGeometry, MapBaseMarker } from "./SpotMap";
 export { default as RouteMap, type RouteMapProps } from "./RouteMap";
 export { default as LocateButton, type LocateButtonProps } from "./LocateButton";
 export { MapContext, useMap, type MapContextValue, type CurrentLocation } from "./MapContext";
@@ -19,6 +19,7 @@ export {
 export {
   useViewportSpots,
   buildSpotsPath,
+  toResponse,
   type Viewport,
   type UseViewportSpotsOptions,
   type UseViewportSpotsResult,
@@ -31,6 +32,10 @@ export {
   createStopElement,
   updateStopElement,
   createLocationDotElement,
+  createBaseElement,
+  updateBaseElement,
+  fadeInMarker,
+  fadeOutMarker,
   disposeMarkerElement,
   pinAriaLabel,
   clusterAriaLabel,

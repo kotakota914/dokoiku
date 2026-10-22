@@ -46,7 +46,11 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 必須 | anon public キー                                                          |
 | `SUPABASE_SERVICE_ROLE_KEY`     | 必須 | service_role キー。Sensitive にする                                       |
 | `NEXT_PUBLIC_SITE_URL`          | 必須 | 本番 URL（例 `https://dokoiko.vercel.app`）                               |
-| `ORS_API_KEY`                   | 任意 | OpenRouteService のキー。無ければ直線距離で概算                           |
+| `ORS_API_KEY`                   | 任意 | OpenRouteService のキー（徒歩・車の移動時間の行列）。無ければ直線距離で概算 |
+| `GOOGLE_ROUTES_API_KEY`         | 任意 | Google Routes API のキー（公共交通の移動時間の行列 computeRouteMatrix）。無ければ「直線距離×1.3 ÷ 15km/h ＋ 待ち 10 分」の概算。Google Cloud で Routes API を有効にし、キーの API 制限と 1 日の割り当てを設定する（F-8-6） |
+| `GEMINI_API_KEY`                | 任意 | Gemini API のキー（「AIと相談」）。無ければ「AIと相談」は停止中（503 `FEATURE_SUSPENDED`、feature `ai_chat`） |
+| `GEMINI_MODEL`                  | 任意 | Gemini のモデル名。既定 `gemini-2.5-flash`                                |
+| `EXTERNAL_API_MOCK`             | 任意 | `true` で外部 API（ORS / Google Routes / Nominatim / Gemini）を `mock-data/external/*.json` の記録済みの結果に置き換える（F-8-8）。無料枠の回数は数えない。開発・デモ用で、本番では設定しない |
 | `NOMINATIM_USER_AGENT`          | 任意 | Nominatim の利用規約で求められる連絡先入り UA                             |
 | `NOMINATIM_ENABLED`             | 任意 | `false` で外部検索を無効化                                                |
 | `NOTIFY_WEBHOOK_URL`            | 任意 | Discord Webhook（無料枠停止・再開の通知）                                 |

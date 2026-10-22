@@ -2,9 +2,10 @@
  * Memory Repository が保持する行の型と、保存形（JSON）との相互変換、スポット統計の計算。
  * seed.ts と index.ts の両方から使う純粋なモジュール（fs は使わない）。
  */
-import { LIMITS, STAY_DURATION_MINUTES, type Category } from "@/lib/domain/constants";
+import { LIMITS, STAY_DURATION_MINUTES, type Category, type Popularity } from "@/lib/domain/constants";
 import type {
   ApiUsage,
+  LatLng,
   Plan,
   Post,
   PostImage,
@@ -14,6 +15,7 @@ import type {
   TravelTimeEntry,
 } from "@/lib/domain/types";
 import { jstHour } from "@/lib/utils/time";
+import { normalizePlanParams, normalizePlanResult } from "../normalize";
 
 /** 投稿に紐づく画像（post_images 行） */
 export interface StoredImage extends PostImage {
@@ -31,8 +33,17 @@ export interface WishlistRow {
   id: string;
   userId: string;
   name: string;
+  /** v0.3 F-4-8：拠点（無ければ null） */
+  baseLabel: string | null;
+  baseLocation: LatLng | null;
   shareToken: string | null;
   createdAt: string;
+}
+
+/** spots.popularity に相当する行（Spot 型には持たせず別に保持する） */
+export interface PopularityRow {
+  spotId: string;
+  popularity: Popularity;
 }
 
 export interface WishlistItemRow {
@@ -54,11 +65,13 @@ export interface MemoryState {
   wishlists: Map<string, WishlistRow>;
   wishlistItems: WishlistItemRow[];
   plans: Map<string, Plan>;
-  /** `${fromKey}|${toKey}|${mode}` -> キャッシュ */
+  /** `${fromKey}|${toKey}|${mode}|${timeBucket}` -> キャッシュ */
   travelCache: Map<string, TravelTimeEntry>;
   /** `${provider}|${feature}|${period}` -> 使用量 */
   apiUsage: Map<string, ApiUsage>;
   reports: Map<string, Report>;
+  /** spotId -> 人気度（v0.3 F-1-5 の相対順位。recomputePopularity が更新する） */
+  popularity: Map<string, Popularity>;
 }
 
 /** memory.json の形 */
@@ -76,14 +89,23 @@ export interface MemorySnapshot {
   travelCache: TravelTimeEntry[];
   apiUsage: ApiUsage[];
   reports: Report[];
+  /** v0.3 で追加（古いファイルには無い） */
+  popularity?: PopularityRow[];
 }
 
 export function likeKey(userId: string, postId: string): string {
   return `${userId}|${postId}`;
 }
 
-export function travelKey(fromKey: string, toKey: string, mode: string): string {
-  return `${fromKey}|${toKey}|${mode}`;
+export const TRAVEL_BUCKET_ANY = "any";
+
+export function travelKey(
+  fromKey: string,
+  toKey: string,
+  mode: string,
+  timeBucket = TRAVEL_BUCKET_ANY,
+): string {
+  return `${fromKey}|${toKey}|${mode}|${timeBucket}`;
 }
 
 export function usageKey(provider: string, feature: string, period: string): string {
@@ -103,6 +125,7 @@ export function createEmptyState(): MemoryState {
     travelCache: new Map(),
     apiUsage: new Map(),
     reports: new Map(),
+    popularity: new Map(),
   };
 }
 
@@ -121,6 +144,43 @@ export function toSnapshot(state: MemoryState, savedAt: string): MemorySnapshot 
     travelCache: [...state.travelCache.values()],
     apiUsage: [...state.apiUsage.values()],
     reports: [...state.reports.values()],
+    popularity: [...state.popularity].map(([spotId, popularity]) => ({ spotId, popularity })),
+  };
+}
+
+/** 古い保存形（baseLabel / baseLocation が無い）にも既定値を補う */
+export function normalizeWishlistRow(
+  raw: WishlistRow | (Omit<WishlistRow, "baseLabel" | "baseLocation"> & Partial<WishlistRow>),
+): WishlistRow {
+  const loc = raw.baseLocation;
+  const baseLocation =
+    loc && typeof loc.lat === "number" && typeof loc.lng === "number" ? { lat: loc.lat, lng: loc.lng } : null;
+  return {
+    id: raw.id,
+    userId: raw.userId,
+    name: raw.name,
+    baseLabel: typeof raw.baseLabel === "string" && baseLocation ? raw.baseLabel : null,
+    baseLocation,
+    shareToken: raw.shareToken ?? null,
+    createdAt: raw.createdAt,
+  };
+}
+
+/** 古い保存形のプラン（method / preferences / next / stats が無い）を v0.3 の形にする */
+export function normalizePlanRow(raw: Plan): Plan {
+  const params = normalizePlanParams(raw.params);
+  const result = normalizePlanResult(raw.result, params);
+  return {
+    id: raw.id,
+    wishlistId: raw.wishlistId,
+    userId: raw.userId,
+    date: raw.date ?? params.date,
+    spotCount: typeof raw.spotCount === "number" ? raw.spotCount : result.stats.spotCount,
+    totalTravelMin: typeof raw.totalTravelMin === "number" ? raw.totalTravelMin : result.totalTravelMin,
+    method: raw.method ?? params.method,
+    createdAt: raw.createdAt,
+    params,
+    result,
   };
 }
 
@@ -159,12 +219,22 @@ export function fromSnapshot(raw: unknown): MemoryState | null {
   }
   for (const list of state.images.values()) list.sort((a, b) => a.sortOrder - b.sortOrder);
   for (const l of snap.likes) state.likes.set(likeKey(l.userId, l.postId), l);
-  for (const w of snap.wishlists) state.wishlists.set(w.id, w);
+  for (const w of snap.wishlists) state.wishlists.set(w.id, normalizeWishlistRow(w));
   state.wishlistItems = [...snap.wishlistItems];
-  for (const p of snap.plans) state.plans.set(p.id, p);
-  for (const t of snap.travelCache) state.travelCache.set(travelKey(t.fromKey, t.toKey, t.mode), t);
+  for (const p of snap.plans) state.plans.set(p.id, normalizePlanRow(p));
+  for (const t of snap.travelCache) {
+    const entry: TravelTimeEntry = { ...t, timeBucket: t.timeBucket ?? TRAVEL_BUCKET_ANY };
+    state.travelCache.set(travelKey(entry.fromKey, entry.toKey, entry.mode, entry.timeBucket), entry);
+  }
   for (const u of snap.apiUsage) state.apiUsage.set(usageKey(u.provider, u.feature, u.period), u);
   for (const r of snap.reports) state.reports.set(r.id, r);
+  if (Array.isArray(snap.popularity)) {
+    for (const row of snap.popularity) {
+      if (row && typeof row.spotId === "string" && state.spots.has(row.spotId)) {
+        state.popularity.set(row.spotId, row.popularity);
+      }
+    }
+  }
   return state;
 }
 

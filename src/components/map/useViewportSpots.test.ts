@@ -23,3 +23,22 @@ describe("buildSpotsPath", () => {
     expect(zoomForRequest(8.5)).toBe(9);
   });
 });
+
+describe("toResponse（v0.3 区画キャッシュの状態 → API と同じ形）", () => {
+  it("spots / heatmap をそれぞれの形にする", async () => {
+    const { toResponse } = await import("./useViewportSpots");
+    expect(
+      toResponse({ mode: "spots", spots: [], heatPoints: [], complete: true, z: 14, loading: false }),
+    ).toEqual({ mode: "spots", spots: [] });
+    expect(
+      toResponse({
+        mode: "heatmap",
+        spots: [],
+        heatPoints: [{ lat: 1, lng: 2, weight: 3 }],
+        complete: false,
+        z: 8,
+        loading: true,
+      }),
+    ).toEqual({ mode: "heatmap", points: [{ lat: 1, lng: 2, weight: 3 }] });
+  });
+});

@@ -2,8 +2,11 @@
 
 /**
  * 地図コア（F-1）。MapLibre GL JS ＋ OpenFreeMap ＋ Supercluster。
- * - ズームに応じてヒートマップ（≤8）/ 写真の束（9〜13）/ 写真ピン（≥14）を切り替える（F-1-3）
- * - 移動が止まってから 300ms 後に onViewportChange を呼ぶ（F-1-2）
+ * - ズームに応じてヒートマップ（≤8）/ 写真の束（9〜13）/ 写真ピン（≥14）を切り替える（F-1-3）。
+ *   切り替えは MAP_MODE_FADE_SEC（0.3 秒）の透明度アニメーション（ヒートマップはレイヤーの heatmap-opacity、
+ *   マーカーは Web Animations API）
+ * - 移動・ズームの最中も最大 300ms に 1 回、止まったときにすぐ onViewportChange を呼ぶ（F-1-2）
+ * - 選んだリストのスポットの強調と拠点のマーカー（F-1-9）
  * - 経路線と番号マーカー（F-5-4）、現在地の点
  * window に依存するコードは useEffect の中だけに置く（SSR 不可。Server Component からは SpotMapLazy を使う）。
  */
@@ -11,7 +14,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { RefreshCw } from "lucide-react";
 import { Map as MapLibreMap, Marker, type GeoJSONSource, type LngLatBoundsLike } from "maplibre-gl";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { LIMITS, MAP_ZOOM, mapModeForZoom } from "@/lib/domain/constants";
+import { LIMITS, MAP_ZOOM, mapModeForZoom, type MapMode } from "@/lib/domain/constants";
 import type { HeatPoint, LatLng, SpotSummary } from "@/lib/domain/types";
 import {
   buildClusterIndex,
@@ -23,15 +26,21 @@ import {
 } from "@/lib/map/cluster";
 import type { RouteStop } from "@/lib/map/route";
 import { applyJapaneseLabels, OPENFREEMAP_STYLE_URL, readCssToken } from "@/lib/map/style";
+import { throttle } from "@/lib/map/tileCache";
 import { bboxContains, expandBbox, getInitialView, type MapBbox, type MapView } from "@/lib/map/view";
 import { MapContext, type CurrentLocation, type MapContextValue } from "./MapContext";
 import { configureMapLibreWorker } from "./workerUrl";
 import {
+  createBaseElement,
   createClusterElement,
   createLocationDotElement,
   createPinElement,
   createStopElement,
   disposeMarkerElement,
+  fadeInMarker,
+  fadeOutMarker,
+  modeFadeMs,
+  updateBaseElement,
   updateClusterElement,
   updatePinElement,
   updateStopElement,
@@ -39,18 +48,27 @@ import {
 
 export type RouteGeometry = { type: "LineString"; coordinates: [number, number][] };
 
+/** v0.3 F-1-9：リストの拠点（house のマーカーで表示） */
+export interface MapBaseMarker extends LatLng {
+  label: string;
+}
+
 export interface SpotMapProps {
   /** 写真の束・写真ピンに使うスポット（mode が spots のとき） */
   spots?: SpotSummary[];
   /** ヒートマップの点（mode が heatmap のとき） */
   heatPoints?: HeatPoint[];
-  /** 初期位置。省略時は日本全体。useHash が true で URL にハッシュがあればそちらを優先 */
+  /** 初期位置。省略時は getInitialView(null)（DEFAULT_VIEW）。useHash が true で URL にハッシュがあればそちらを優先 */
   initialView?: MapView;
   /** URL ハッシュ（#zoom/lat/lng）に地図の位置を同期する（トップ画面では true） */
   useHash?: boolean;
-  /** 移動・ズームが止まって 300ms 後と、マウント直後に呼ばれる */
+  /** マウント直後、移動・ズームの最中（最大 300ms に 1 回）、止まったときに呼ばれる */
   onViewportChange?: (bbox: MapBbox, zoom: number) => void;
   selectedSpotId?: string | null;
+  /** v0.3 F-1-9：強調表示するスポット（選んだリストのスポット）の ID */
+  highlightSpotIds?: ReadonlySet<string> | null;
+  /** v0.3 F-1-9：リストの拠点。null なら表示しない */
+  baseMarker?: MapBaseMarker | null;
   /** 写真ピン（または束にならない単独点）をタップしたとき */
   onSpotTap?: (spot: SpotSummary) => void;
   /** 写真の束をタップしたとき。省略時はその範囲にズームインする（F-1-6） */
@@ -80,12 +98,20 @@ const LAYER_LOCATION_ACCURACY = "dk-location-accuracy";
 
 /** 画面外のマーカーもこの割合だけ先に作っておく（小さな移動で再生成しないため） */
 const VIEWPORT_MARGIN = 0.2;
+/** ヒートマップを表示しているときの透明度 */
+const HEAT_OPACITY = 0.85;
 const FIT_PADDING = 48;
 const SINGLE_POINT_ZOOM = 15;
 
 type MarkerEntry =
   | { kind: "pin"; marker: Marker; el: HTMLElement; lat: number; lng: number; spot: SpotSummary }
   | { kind: "cluster"; marker: Marker; el: HTMLElement; lat: number; lng: number; view: ClusterView };
+
+/** 表示方式の切り替えで透明にしてから消す途中のマーカー */
+interface FadingEntry {
+  marker: Marker;
+  el: HTMLElement;
+}
 
 interface StopEntry {
   marker: Marker;
@@ -157,6 +183,8 @@ export default function SpotMap({
   useHash = false,
   onViewportChange,
   selectedSpotId = null,
+  highlightSpotIds = null,
+  baseMarker = null,
   onSpotTap,
   onClusterTap,
   routeGeometry = null,
@@ -174,9 +202,11 @@ export default function SpotMap({
   const stopMarkersRef = useRef<StopEntry[]>([]);
   const locationMarkerRef = useRef<Marker | null>(null);
   const locationRef = useRef<CurrentLocation | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fadingRef = useRef<Set<FadingEntry>>(new Set());
+  const modeRef = useRef<MapMode | null>(null);
+  const baseMarkerRef = useRef<{ marker: Marker; el: HTMLElement } | null>(null);
 
-  const clusterIndex = useMemo(() => buildClusterIndex(spots), [spots]);
+  const clusterIndex = useMemo(() => buildClusterIndex(spots, highlightSpotIds), [spots, highlightSpotIds]);
 
   // 最新の props をイベントハンドラから参照するための ref（ハンドラは一度だけ登録する）。
   // 描画のたびに effect で更新する（他の effect より先に宣言しているので先に走る）
@@ -184,6 +214,7 @@ export default function SpotMap({
     spots,
     heatPoints,
     selectedSpotId,
+    highlightSpotIds,
     onSpotTap,
     onClusterTap,
     onViewportChange,
@@ -208,6 +239,28 @@ export default function SpotMap({
       disposeMarkerElement(entry.el);
     }
     markersRef.current.clear();
+    for (const f of fadingRef.current) {
+      f.marker.remove();
+      disposeMarkerElement(f.el);
+    }
+    fadingRef.current.clear();
+    modeRef.current = null;
+  }, []);
+
+  /** マーカーを消す。表示方式が切り替わったときは透明にしてから消す（F-1-3） */
+  const removeMarker = useCallback((marker: Marker, el: HTMLElement, fade: boolean) => {
+    if (!fade) {
+      marker.remove();
+      disposeMarkerElement(el);
+      return;
+    }
+    const entry: FadingEntry = { marker, el };
+    fadingRef.current.add(entry);
+    fadeOutMarker(el, () => {
+      if (!fadingRef.current.delete(entry)) return;
+      marker.remove();
+      disposeMarkerElement(el);
+    });
   }, []);
 
   const handleMarkerClick = useCallback((key: string) => {
@@ -244,13 +297,17 @@ export default function SpotMap({
   const syncMarkers = useCallback(() => {
     const map = mapRef.current;
     if (!map || !loadedRef.current) return;
-    const { spots, selectedSpotId } = propsRef.current;
+    const { spots, selectedSpotId, highlightSpotIds } = propsRef.current;
     const zoom = map.getZoom();
     const mode = mapModeForZoom(zoom);
     const bbox = expandBbox(boundsToBbox(map), VIEWPORT_MARGIN);
+    const prevMode = modeRef.current;
+    const modeChanged = prevMode !== null && prevMode !== mode;
+    modeRef.current = mode;
 
-    if (map.getLayer(LAYER_HEAT)) {
-      map.setLayoutProperty(LAYER_HEAT, "visibility", mode === "heatmap" ? "visible" : "none");
+    if (map.getLayer(LAYER_HEAT) && (prevMode === null || modeChanged)) {
+      // レイヤーは出したまま透明度だけを 0.3 秒で切り替える（heatmap-opacity-transition）
+      map.setPaintProperty(LAYER_HEAT, "heatmap-opacity", mode === "heatmap" ? HEAT_OPACITY : 0);
     }
 
     type Desired = { kind: "pin"; spot: SpotSummary } | { kind: "cluster"; view: ClusterView };
@@ -270,8 +327,7 @@ export default function SpotMap({
     for (const [key, entry] of existing) {
       const want = desired.get(key);
       if (!want || want.kind !== entry.kind) {
-        entry.marker.remove();
-        disposeMarkerElement(entry.el);
+        removeMarker(entry.marker, entry.el, modeChanged);
         existing.delete(key);
       }
     }
@@ -287,6 +343,7 @@ export default function SpotMap({
           category: want.spot.category,
           coverThumbUrl: want.spot.coverThumbUrl,
           selected: want.spot.id === selectedSpotId,
+          highlighted: highlightSpotIds?.has(want.spot.id) ?? false,
         };
         if (entry && entry.kind === "pin") {
           updatePinElement(entry.el, spec);
@@ -305,6 +362,7 @@ export default function SpotMap({
           const marker = new Marker({ element: el, anchor: "center" })
             .setLngLat([want.spot.lng, want.spot.lat])
             .addTo(map);
+          fadeInMarker(el);
           existing.set(key, {
             kind: "pin",
             marker,
@@ -323,6 +381,7 @@ export default function SpotMap({
           coverThumbUrl: v.coverThumbUrl,
           name: v.name,
           category: v.category,
+          highlightCount: v.highlightCount,
         };
         if (entry && entry.kind === "cluster") {
           updateClusterElement(entry.el, spec);
@@ -339,11 +398,12 @@ export default function SpotMap({
             handleMarkerClick(key);
           });
           const marker = new Marker({ element: el, anchor: "center" }).setLngLat([v.lng, v.lat]).addTo(map);
+          fadeInMarker(el);
           existing.set(key, { kind: "cluster", marker, el, lat: v.lat, lng: v.lng, view: v });
         }
       }
     }
-  }, [handleMarkerClick]);
+  }, [handleMarkerClick, removeMarker]);
 
   // ---------- 現在地 ----------
   const showLocation = useCallback((loc: CurrentLocation | null) => {
@@ -392,19 +452,8 @@ export default function SpotMap({
       if (!onViewportChange) return;
       onViewportChange(boundsToBbox(map), map.getZoom());
     };
-    const scheduleViewport = () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => {
-        debounceRef.current = null;
-        emitViewport();
-      }, LIMITS.mapFetchDebounceMs);
-    };
-    const cancelViewport = () => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-        debounceRef.current = null;
-      }
-    };
+    // F-1-2：移動中は止まるのを待たず、最大 300ms に 1 回だけ表示範囲を知らせる
+    const throttledViewport = throttle(emitViewport, LIMITS.mapFetchDebounceMs);
 
     const onLoad = () => {
       loadedRef.current = true;
@@ -424,7 +473,6 @@ export default function SpotMap({
         type: "heatmap",
         source: SOURCE_HEAT,
         maxzoom: MAP_ZOOM.heatmapMax + 1,
-        layout: { visibility: "none" },
         paint: {
           "heatmap-weight": ["interpolate", ["linear"], ["get", "weight"], 0, 0, 1, 0.25, 20, 1],
           "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 0, 0.6, MAP_ZOOM.heatmapMax, 1.4],
@@ -442,7 +490,9 @@ export default function SpotMap({
             1,
             primaryStrong,
           ],
-          "heatmap-opacity": 0.85,
+          "heatmap-opacity": 0,
+          // F-1-3：表示方式の切り替えは 0.3 秒かけて透明度を変える
+          "heatmap-opacity-transition": { duration: modeFadeMs(), delay: 0 },
         },
       });
 
@@ -495,16 +545,20 @@ export default function SpotMap({
     const onError = (e: { error?: unknown }) => {
       if (isFatalMapError(e.error, loadedRef.current)) setLoadError(true);
     };
+    const onMove = () => {
+      throttledViewport();
+    };
     const onMoveEnd = () => {
       syncMarkers();
-      scheduleViewport();
+      // 止まったら待たずに知らせる（停止後 1 秒以内に描画する。13 章）
+      throttledViewport();
+      throttledViewport.flush();
     };
 
     map.on("load", onLoad);
     map.on("error", onError);
-    map.on("movestart", cancelViewport);
+    map.on("move", onMove);
     map.on("moveend", onMoveEnd);
-    map.on("zoomend", onMoveEnd);
 
     // 親要素の高さの変化に追従する
     const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => map.resize()) : null;
@@ -512,13 +566,17 @@ export default function SpotMap({
 
     return () => {
       observer?.disconnect();
-      cancelViewport();
+      throttledViewport.cancel();
       map.off("load", onLoad);
       map.off("error", onError);
-      map.off("movestart", cancelViewport);
+      map.off("move", onMove);
       map.off("moveend", onMoveEnd);
-      map.off("zoomend", onMoveEnd);
       clearMarkers();
+      if (baseMarkerRef.current) {
+        baseMarkerRef.current.marker.remove();
+        disposeMarkerElement(baseMarkerRef.current.el);
+        baseMarkerRef.current = null;
+      }
       for (const s of stopMarkersRef.current) {
         s.marker.remove();
         disposeMarkerElement(s.el);
@@ -536,11 +594,37 @@ export default function SpotMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [generation, syncMarkers, clearMarkers]);
 
-  // スポット・選択の変更でマーカーを更新
+  // スポット・選択・強調の変更でマーカーを更新
   useEffect(() => {
     if (!ready) return;
     syncMarkers();
-  }, [ready, spots, selectedSpotId, syncMarkers]);
+  }, [ready, spots, selectedSpotId, highlightSpotIds, syncMarkers]);
+
+  // リストの拠点（F-1-9）
+  const baseLat = baseMarker?.lat;
+  const baseLng = baseMarker?.lng;
+  const baseLabel = baseMarker?.label;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const current = baseMarkerRef.current;
+    if (baseLat === undefined || baseLng === undefined || baseLabel === undefined) {
+      if (current) {
+        current.marker.remove();
+        disposeMarkerElement(current.el);
+        baseMarkerRef.current = null;
+      }
+      return;
+    }
+    if (current) {
+      updateBaseElement(current.el, baseLabel);
+      current.marker.setLngLat([baseLng, baseLat]);
+      return;
+    }
+    const el = createBaseElement(baseLabel);
+    const marker = new Marker({ element: el, anchor: "bottom" }).setLngLat([baseLng, baseLat]).addTo(map);
+    baseMarkerRef.current = { marker, el };
+  }, [ready, baseLat, baseLng, baseLabel]);
 
   // ヒートマップの点
   useEffect(() => {

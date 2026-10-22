@@ -1,5 +1,7 @@
 /**
- * S-06/S-07 行きたい場所リスト → S-08 経路作成 → S-09 経路プラン（並び替え・保存・削除）。
+ * v0.3：S-06/S-07 行きたい場所リスト → S-09 経路作成（おまかせ）→ S-11 経路案の比較（並び替え・保存）
+ * → S-12 保存済みプラン（ナビを開始）→ 削除。
+ * memory モード・外部 API なし（公共交通は概算＝目安）で動く前提。
  */
 import type { Page } from "@playwright/test";
 import { SEED_USERS, SPOTS, devLogin, expect, expectToast, test } from "./helpers";
@@ -21,7 +23,10 @@ async function deleteListsNamed(page: Page, name: string): Promise<void> {
 }
 
 test.describe("リストと経路作成", () => {
-  test("リストに 3 件追加 → 経路を作成 → 並び替え → 保存 → 削除", async ({ page, context }) => {
+  test("リストに 3 件追加 → おまかせで経路案 → 比較・並び替え → 保存 → ナビを開始 → 削除", async ({
+    page,
+    context,
+  }) => {
     test.setTimeout(150_000);
     await context.grantPermissions(["geolocation"]);
     await context.setGeolocation({ latitude: 36.578, longitude: 136.6478 });
@@ -73,18 +78,18 @@ test.describe("リストと経路作成", () => {
     await expect(star).toHaveAttribute("aria-pressed", "true");
     await expect(castleRow.getByText("必ず行きたい", { exact: true })).toBeVisible();
 
-    // 4) 経路作成フォーム
+    // 4) S-09 経路作成（条件入力）
     await page.getByRole("link", { name: "経路を作成" }).click();
     await expect(page).toHaveURL(new RegExp(`/lists/${listId}/plan$`));
     await expect(page.getByRole("heading", { name: "経路作成" })).toBeVisible();
-    await expect(page.getByText("3 / 10か所")).toBeVisible();
+    await expect(page.getByText("3 / 8か所")).toBeVisible();
     await expect(page.getByRole("checkbox", { name: new RegExp(SPOTS.kanazawaCastle.name) })).toBeChecked();
 
-    // 出発地：スポット名で検索 → 金沢駅 鼓門
-    await page.getByRole("radio", { name: "スポット名で検索" }).click();
+    // 出発地：スポット名で検索 → 金沢駅 鼓門（拠点が未設定のリスト）
+    await page.getByRole("radio", { name: "スポット名で検索" }).first().click();
     const originInput = page.getByRole("textbox", { name: "出発地を検索" });
     await originInput.fill("金沢駅");
-    await page.getByRole("button", { name: "検索" }).click();
+    await page.getByRole("button", { name: "検索", exact: true }).click();
     await expect(page.getByText("外部の場所検索は利用できません", { exact: false })).toBeVisible();
     await page
       .getByRole("list", { name: "検索結果" })
@@ -92,40 +97,46 @@ test.describe("リストと経路作成", () => {
       .click();
     await expect(page.getByText("金沢駅 鼓門").first()).toBeVisible();
 
-    // 移動手段：車
-    await page.getByRole("radio", { name: "車" }).click();
-    await expect(page.getByRole("radio", { name: "車" })).toHaveAttribute("aria-checked", "true");
+    // 移動手段は公共交通＋徒歩が初期値。memory モード（キー未設定）は概算で計算する
+    await expect(page.getByRole("radio", { name: "公共交通＋徒歩" })).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByText("公共交通の移動時間は目安（概算）で計算します")).toBeVisible();
+
+    // 作り方：おまかせ（初期値）
+    await expect(page.getByRole("radio", { name: /おまかせ/ })).toHaveAttribute("aria-checked", "true");
 
     const computed = page.waitForResponse(
       (res) => res.url().includes("/api/v1/plans/compute") && res.request().method() === "POST",
     );
-    await page.getByRole("button", { name: "経路を作成" }).click();
+    await page.getByRole("button", { name: "経路案を作成" }).click();
     const computedRes = await computed;
     expect(computedRes.status(), await computedRes.text()).toBe(200);
 
-    // 5) 結果（未保存）
+    // 5) S-11 経路案の比較（未保存）
     await expect(page).toHaveURL(new RegExp(`/lists/${listId}/plan/result$`));
-    await expect(page.getByRole("heading", { name: "経路プラン" })).toBeVisible();
-    await expect(page.getByText("移動時間は概算です")).toBeVisible();
-    await expect(page.getByText("車", { exact: true })).toBeVisible();
+    // 画面の見出し（h1）と、案を並べた区画の見出し（h2）は別の文言
+    await expect(page.getByRole("heading", { level: 1, name: "経路案の比較" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "経路案の比較" })).toHaveCount(1);
+    await expect(page.getByRole("region", { name: "経路案を選ぶ" })).toBeVisible();
+    await expect(page.getByRole("list", { name: "経路案" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^表示中/ })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByText("回れる場所").first()).toBeVisible();
+    // 選んだ案の概要に「目安」のバッジ（各案の注意書き「公共交通の移動時間は目安です」とは別）
+    await expect(page.getByText("移動時間は目安です", { exact: true })).toBeVisible();
     await expect(page.getByText("金沢駅 鼓門").first()).toBeVisible();
     await expect(page.getByRole("heading", { name: "タイムライン" })).toBeVisible();
     const visits = page.getByRole("list", { name: "訪問順" });
     await expect(visits).toBeVisible();
     await expect(visits.getByText(/到着 \d{2}:\d{2}〜出発 \d{2}:\d{2}/).first()).toBeVisible();
     await expect(visits.getByText(/滞在 /).first()).toBeVisible();
-    await expect(page.getByText(/合計移動時間/)).toBeVisible();
-    await expect(page.getByText(/移動 .*分/).first()).toBeVisible();
-    await expect(page.getByRole("link", { name: "Googleマップで経路を開く" }).first()).toHaveAttribute(
-      "href",
-      /google\.com\/maps/,
-    );
+    await expect(page.getByText(/移動 .*分（目安）/).first()).toBeVisible();
+    // 保存前の案には「ナビを開始」を置かない（ADR-0016）
+    await expect(page.getByText("ナビを開始")).toHaveCount(0);
 
-    // 上下ボタンで並び替えると再計算される
+    // 上下ボタンで並び替えると再計算される（外部 API は呼ばない）
     const orderBefore = await visits
       .getByRole("button", { name: /を下へ$/ })
       .evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")!.replace(/を下へ$/, "")));
-    expect(orderBefore.length).toBe(3);
+    expect(orderBefore.length).toBeGreaterThanOrEqual(2);
     const recomputed = page.waitForResponse(
       (res) => res.url().includes("/api/v1/plans/recompute") && res.request().method() === "POST",
     );
@@ -136,18 +147,29 @@ test.describe("リストと経路作成", () => {
     const orderAfter = await visits
       .getByRole("button", { name: /を下へ$/ })
       .evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")!.replace(/を下へ$/, "")));
-    expect(orderAfter).toEqual([orderBefore[1], orderBefore[0], orderBefore[2]]);
+    expect(orderAfter.slice(0, 2)).toEqual([orderBefore[1], orderBefore[0]]);
 
-    // 6) 保存 → /plans/<id>
+    // 6) この案を保存 → S-12 /plans/<id>
     const saved = page.waitForResponse(
       (res) => /\/api\/v1\/plans$/.test(res.url()) && res.request().method() === "POST",
     );
-    await page.getByRole("button", { name: "保存", exact: true }).click();
-    expect((await saved).status()).toBe(201);
+    await page.getByRole("button", { name: "この案を保存" }).click();
+    const savedRes = await saved;
+    expect(savedRes.status(), await savedRes.text()).toBe(201);
     await expectToast(page, "プランを保存しました");
     await expect(page).toHaveURL(/\/plans\/[0-9a-f-]+$/);
     await expect(page.getByRole("heading", { name: "保存済みプラン" })).toBeVisible();
     await expect(page.getByRole("list", { name: "訪問順" })).toBeVisible();
+    // 保存済みプランには各区間に「ナビを開始」（Google マップ、新しいタブ）
+    const navs = page.getByRole("link", { name: /へのナビをGoogleマップで開く$/ });
+    await expect(navs.first()).toBeVisible();
+    expect(await navs.count()).toBeGreaterThanOrEqual(2);
+    await expect(navs.first()).toHaveAttribute(
+      "href",
+      /^https:\/\/www\.google\.com\/maps\/dir\/\?api=1&origin=.+&destination=.+&travelmode=transit$/,
+    );
+    await expect(navs.first()).toHaveAttribute("target", "_blank");
+    await expect(navs.first()).toHaveAccessibleName(/^金沢駅 鼓門から.+へのナビをGoogleマップで開く$/);
 
     // 7) リスト詳細に保存済みプランが出る → 削除
     await page.goto(`/lists/${listId}`);

@@ -17,7 +17,14 @@ import type { SuspendedFeature, SystemStatus } from "@/lib/domain/types";
 /** 取得に失敗したときの保守的な既定値（外部サービスは使えないものとして扱う） */
 export const DEFAULT_SYSTEM_STATUS: SystemStatus = {
   suspended: [],
-  capabilities: { externalSearch: false, routing: false, googleLogin: false, backend: "memory" },
+  capabilities: {
+    externalSearch: false,
+    routing: false,
+    transit: false,
+    ai: false,
+    googleLogin: false,
+    backend: "memory",
+  },
 };
 
 /** 再取得の間隔（5 分） */

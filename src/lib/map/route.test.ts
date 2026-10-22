@@ -11,9 +11,17 @@ describe("buildRouteStops", () => {
       stayMin: 60,
       depart: "10:30",
       travelMinToNext: 20,
+      next: { mode: "walking", travelMin: 20, estimated: false, walkM: 1500 },
       inBestTime: true,
     },
-    { type: "lunch", arrive: "11:30", stayMin: 60, depart: "12:30", travelMinToNext: 10 },
+    {
+      type: "lunch",
+      arrive: "11:30",
+      stayMin: 60,
+      depart: "12:30",
+      travelMinToNext: 10,
+      next: { mode: "walking", travelMin: 10, estimated: false, walkM: 700 },
+    },
     {
       type: "spot",
       spotId: "b",
@@ -21,6 +29,7 @@ describe("buildRouteStops", () => {
       stayMin: 45,
       depart: "13:25",
       travelMinToNext: null,
+      next: null,
       inBestTime: false,
     },
     {
@@ -30,6 +39,7 @@ describe("buildRouteStops", () => {
       stayMin: 30,
       depart: "14:10",
       travelMinToNext: null,
+      next: null,
       inBestTime: false,
     },
   ];

@@ -9,7 +9,7 @@
  */
 import type { Category, StayDuration } from "@/lib/domain/constants";
 import { CATEGORIES, STAY_DURATIONS } from "@/lib/domain/constants";
-import type { Post, Profile, Spot } from "@/lib/domain/types";
+import type { Post, Profile, Spot, SpotSource } from "@/lib/domain/types";
 import spotsJson from "../../../../seed-data/kanazawa/spots.json";
 import photosJson from "../../../../seed-data/kanazawa/photos.json";
 import { computeSpotStats, type LikeRow, type StoredImage } from "./model";
@@ -141,6 +141,8 @@ export interface SpotSeed {
   address: string;
   prefecture: string;
   city: string;
+  /** 登録元。初期データは seed（10.5）。省略時も seed */
+  source: SpotSource;
   stayDefault: StayDuration;
   postCountTarget: number;
   hourProfile: HourProfile;
@@ -152,6 +154,8 @@ export interface SpotSeed {
 function isOneOf<T extends string>(list: readonly T[], v: unknown): v is T {
   return typeof v === "string" && (list as readonly string[]).includes(v);
 }
+
+const SPOT_SOURCES = ["gps", "search_db", "search_external", "seed"] as const satisfies readonly SpotSource[];
 
 /** JSON の 1 件を検証して SpotSeed にする。形が違えば例外（seed の不備を起動時に気づけるように） */
 function parseSpotSeed(raw: unknown, index: number): SpotSeed {
@@ -167,6 +171,7 @@ function parseSpotSeed(raw: unknown, index: number): SpotSeed {
   if (!isOneOf(CATEGORIES, r.category)) fail("category");
   if (typeof r.address !== "string") fail("address");
   if (typeof r.prefecture !== "string" || typeof r.city !== "string") fail("prefecture/city");
+  if (r.source !== undefined && !isOneOf(SPOT_SOURCES, r.source)) fail("source");
   if (!isOneOf(STAY_DURATIONS, r.stayDefault)) fail("stayDefault");
   if (typeof r.postCountTarget !== "number" || r.postCountTarget < 1 || r.postCountTarget > 25)
     fail("postCountTarget");
@@ -181,6 +186,7 @@ function parseSpotSeed(raw: unknown, index: number): SpotSeed {
     address: r.address as string,
     prefecture: r.prefecture as string,
     city: r.city as string,
+    source: isOneOf(SPOT_SOURCES, r.source) ? r.source : "seed",
     stayDefault: r.stayDefault as StayDuration,
     postCountTarget: r.postCountTarget as number,
     hourProfile: r.hourProfile as HourProfile,
@@ -463,7 +469,7 @@ export function buildSeedData(): SeedData {
       prefecture: seed.prefecture,
       city: seed.city,
       category: seed.category,
-      source: "gps",
+      source: seed.source,
       externalRef: null,
       postCount: 0,
       likeCount: 0,

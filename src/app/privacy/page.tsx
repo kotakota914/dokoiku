@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 
 export const metadata: Metadata = { title: "プライバシーポリシー" };
 
-const UPDATED_AT = "2026年10月10日";
+const UPDATED_AT = "2026年10月22日";
 
 /** S-14：プライバシーポリシー */
 export default function PrivacyPage() {
@@ -63,6 +63,12 @@ export default function PrivacyPage() {
             取得した個人情報を第三者に販売・提供することはありません。本サービスは、認証とデータ保存に
             Supabase、地図表示に OpenFreeMap、経路計算に OpenRouteService、場所検索に
             Nominatim（OpenStreetMap）を利用しています。経路計算と場所検索では、スポットの座標や検索語がこれらのサービスに送信されますが、利用者の個人情報は送信しません。
+          </p>
+          <p>
+            公共交通の移動時間の計算には Google Routes API
+            を利用し、出発地・到着地とスポットの座標、日付と出発時刻を送信します。「AIと相談」では、会話の内容、リスト内のスポット名、日付・時刻・移動手段などの条件を外部の
+            AI サービス（Google Gemini）に送信します。ユーザー名やメールアドレスは送信しません。AI
+            との会話の内容は本サービスには保存しません。
           </p>
         </Section>
 

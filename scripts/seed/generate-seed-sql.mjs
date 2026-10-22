@@ -25,6 +25,8 @@ const OUT_FILE = path.join(ROOT, "supabase", "seed.sql");
 const CATEGORIES = ["nature", "gourmet", "history", "photogenic", "other"];
 const STAY_DURATIONS = ["lt30", "lt60", "lt120", "half_day"];
 const HOUR_PROFILE_NAMES = ["morning", "day", "evening", "night", "lunch"];
+/** spots.source（10.5：初期データは seed。省略時も seed） */
+const SPOT_SOURCES = ["gps", "search_db", "search_external", "seed"];
 
 const SEED_USERS = [
   {
@@ -136,6 +138,8 @@ function loadSpots() {
     if (typeof r.lat !== "number" || typeof r.lng !== "number")
       throw new Error(`${where}: lat/lng が不正です`);
     if (!CATEGORIES.includes(r.category)) throw new Error(`${where}: category が不正です`);
+    if (r.source !== undefined && !SPOT_SOURCES.includes(r.source))
+      throw new Error(`${where}: source が不正です`);
     if (!STAY_DURATIONS.includes(r.stayDefault)) throw new Error(`${where}: stayDefault が不正です`);
     if (!HOUR_PROFILE_NAMES.includes(r.hourProfile)) throw new Error(`${where}: hourProfile が不正です`);
     if (!Number.isInteger(r.postCountTarget) || r.postCountTarget < 1 || r.postCountTarget > 25)
@@ -320,6 +324,7 @@ function build(spotSeeds, photoMap) {
       prefecture: seed.prefecture,
       city: seed.city,
       category: seed.category,
+      source: SPOT_SOURCES.includes(seed.source) ? seed.source : "seed",
       createdBy: first?.userId ?? USER_IDS[0],
       createdAt: first?.createdAt ?? "2026-04-01T09:00:00+09:00",
     });
@@ -343,6 +348,7 @@ function render(data) {
 -- 直接編集せず、spots.json / photos.json を直して再生成すること：
 --   node scripts/seed/generate-seed-sql.mjs
 -- 何度流しても同じ結果になるよう、ID は固定 UUID（memory モードと同じ）で on conflict do nothing にする。
+-- spots.source は 'seed'（10.5）。0003_v03.sql を適用したあとに流すこと（recompute_popularity を使う）。
 -- 画像の実ファイルは写真取得ツールが public/seed/photos/<key>/<n>.webp に置き、
 -- Supabase では同じパスで Storage（post-images バケット）に置く
 -- （UI は読み込み失敗時にカテゴリアイコンで代替表示する）。
@@ -371,7 +377,7 @@ insert into public.spots (id, name, location, address, prefecture, city, categor
     spots
       .map(
         (s) =>
-          `  (${q(s.id)}, ${q(s.name)}, st_setsrid(st_makepoint(${s.lng}, ${s.lat}), 4326)::geography, ${qn(s.address)}, ${q(s.prefecture)}, ${q(s.city)}, ${q(s.category)}, 'gps', ${q(s.createdBy)}, ${ts(s.createdAt)})`,
+          `  (${q(s.id)}, ${q(s.name)}, st_setsrid(st_makepoint(${s.lng}, ${s.lat}), 4326)::geography, ${qn(s.address)}, ${q(s.prefecture)}, ${q(s.city)}, ${q(s.category)}, ${q(s.source)}, ${q(s.createdBy)}, ${ts(s.createdAt)})`,
       )
       .join(",\n") + "\non conflict (id) do nothing;\n",
   );
@@ -405,7 +411,7 @@ insert into public.likes (user_id, post_id, created_at) values`);
       "\non conflict (user_id, post_id) do nothing;\n",
   );
 
-  out.push(`-- ---------- 統計の再計算（投稿数・代表写真・時間帯分布など） ----------
+  out.push(`-- ---------- 統計の再計算（投稿数・代表写真・時間帯分布など）と人気度（F-1-5、0003_v03.sql の関数） ----------
 do $$
 declare
   r record;
@@ -413,6 +419,7 @@ begin
   for r in select id from public.spots loop
     perform public.recompute_spot_stats(r.id);
   end loop;
+  perform public.recompute_popularity();
 end;
 $$;
 

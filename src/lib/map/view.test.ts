@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { JAPAN_CENTER, MAP_ZOOM } from "@/lib/domain/constants";
+import { DEFAULT_VIEW, JAPAN_CENTER, MAP_ZOOM, USE_DEFAULT_VIEW_WHEN_DENIED } from "@/lib/domain/constants";
 import {
   bboxOfPoints,
   bboxToQuery,
@@ -17,12 +17,21 @@ describe("getInitialView", () => {
       zoom: MAP_ZOOM.initialWithLocation,
     });
   });
-  it("位置情報がなければ日本全体（ズーム5）", () => {
-    expect(getInitialView(null)).toEqual({
+  it("位置情報がなければ DEFAULT_VIEW（金沢市中心部、ズーム13）（v0.3 Q4-B）", () => {
+    expect(USE_DEFAULT_VIEW_WHEN_DENIED).toBe(true);
+    expect(getInitialView(null)).toEqual({ center: { ...DEFAULT_VIEW.center }, zoom: DEFAULT_VIEW.zoom });
+    expect(getInitialView(undefined)).toEqual({ center: { ...DEFAULT_VIEW.center }, zoom: 13 });
+    expect(getInitialView({ lat: Number.NaN, lng: 1 }).zoom).toBe(DEFAULT_VIEW.zoom);
+    expect(getInitialView(null, { useDefaultWhenDenied: true })).toEqual(getInitialView(null));
+  });
+  it("useDefaultWhenDenied: false なら日本全体（ズーム5）", () => {
+    expect(getInitialView(null, { useDefaultWhenDenied: false })).toEqual({
       center: { ...JAPAN_CENTER },
       zoom: MAP_ZOOM.initialWithoutLocation,
     });
-    expect(getInitialView({ lat: Number.NaN, lng: 1 }).zoom).toBe(MAP_ZOOM.initialWithoutLocation);
+    expect(getInitialView({ lat: Number.NaN, lng: 1 }, { useDefaultWhenDenied: false }).zoom).toBe(
+      MAP_ZOOM.initialWithoutLocation,
+    );
   });
 });
 

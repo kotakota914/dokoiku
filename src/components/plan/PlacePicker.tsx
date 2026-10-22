@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 出発地・到着地の選択（F-5-1）：「現在地」または「スポット名で検索」。
+ * 出発地・到着地の選択（F-5-2）：「拠点」（リストに設定があれば）・「現在地」・「スポット名で検索」。
  * 現在地は getCurrentPosition()、検索は GET /places/search（検索ボタン押下時のみ）。
  */
 import { useId, useState, type KeyboardEvent } from "react";
@@ -18,16 +18,19 @@ import {
   Input,
   SuspendedNotice,
   cn,
+  type ChipOption,
 } from "@/components/ui";
 import { ApiClientError, api, errorMessage } from "@/lib/api/client";
 import type { PlaceCandidate, PlacesSearchResponse, PlanPlace } from "@/lib/domain/types";
+import { PlanIcon } from "./PlanIcon";
 
-export type PlaceMode = "current" | "search";
+export type PlaceMode = "base" | "current" | "search";
 
-const MODE_OPTIONS = [
+const MODE_OPTIONS: ReadonlyArray<ChipOption<PlaceMode>> = [
   { value: "current", label: "現在地", icon: "locate-fixed" },
   { value: "search", label: "スポット名で検索", icon: "search" },
-] as const;
+];
+const BASE_OPTION: ChipOption<PlaceMode> = { value: "base", label: "拠点" };
 
 export const CURRENT_LOCATION_LABEL = "現在地";
 
@@ -47,10 +50,26 @@ export interface PlacePickerProps {
   disabled?: boolean;
   /** 401 のときに呼ぶ（ログイン画面へ） */
   onUnauthorized?: () => void;
+  /** リストの拠点（F-4-8）。あれば「拠点」を選べるようにし、最初はそれを選ぶ */
+  base?: PlanPlace | null;
 }
 
-export function PlacePicker({ label, value, onChange, error, disabled, onUnauthorized }: PlacePickerProps) {
-  const [mode, setMode] = useState<PlaceMode>("current");
+function samePlace(a: PlanPlace | null, b: PlanPlace | null | undefined): boolean {
+  return !!a && !!b && a.lat === b.lat && a.lng === b.lng;
+}
+
+export function PlacePicker({
+  label,
+  value,
+  onChange,
+  error,
+  disabled,
+  onUnauthorized,
+  base,
+}: PlacePickerProps) {
+  const [mode, setMode] = useState<PlaceMode>(() =>
+    base && (value === null || samePlace(value, base)) ? "base" : "current",
+  );
   const [locating, setLocating] = useState(false);
   const [locateError, setLocateError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -113,11 +132,13 @@ export function PlacePicker({ label, value, onChange, error, disabled, onUnautho
       <div className="flex flex-col gap-3">
         <ChipGroup
           aria-labelledby={`${labelId}-label`}
-          options={MODE_OPTIONS}
+          options={base ? [BASE_OPTION, ...MODE_OPTIONS] : MODE_OPTIONS}
           value={mode}
           disabled={disabled}
           onChange={(v) => {
-            if (v) setMode(v);
+            if (!v) return;
+            setMode(v);
+            if (v === "base" && base) onChange(base);
           }}
         />
 
@@ -131,7 +152,24 @@ export function PlacePicker({ label, value, onChange, error, disabled, onUnautho
           </Card>
         ) : null}
 
-        {mode === "current" ? (
+        {mode === "base" && base ? (
+          <div className="flex flex-col gap-2">
+            <p className="flex items-start gap-2 text-base text-text-muted">
+              <PlanIcon name="house" size={16} className="mt-1" />
+              <span>リストの拠点（{base.label || "拠点"}）を使います。</span>
+            </p>
+            {!samePlace(value, base) ? (
+              <Button
+                variant="secondary"
+                disabled={disabled}
+                onClick={() => onChange(base)}
+                className="self-start"
+              >
+                拠点を使う
+              </Button>
+            ) : null}
+          </div>
+        ) : mode === "current" ? (
           <div className="flex flex-col gap-2">
             <Button
               variant="secondary"

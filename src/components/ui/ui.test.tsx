@@ -320,8 +320,11 @@ describe("Dialog", () => {
     const opener = buttonByText(container, "開く");
     act(() => opener.focus());
     click(opener);
-    const panel = container.querySelector('[role="dialog"]')!;
+    // document.body へポータルで描画する（呼び出し側の pointer-events-none や z-index の影響を受けない）
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    const panel = document.querySelector('[role="dialog"]')!;
     expect(panel).toHaveAttribute("aria-modal", "true");
+    expect(panel.closest(".fixed")?.parentElement).toBe(document.body);
     expect(document.activeElement).toBe(panel);
 
     // パネルから Tab → 先頭（閉じるボタン）。末尾（OK）から Tab → 先頭。先頭から Shift+Tab → 末尾
@@ -336,7 +339,7 @@ describe("Dialog", () => {
     expect(document.activeElement).toBe(ok);
 
     click(ok);
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(document.activeElement).toBe(opener);
   });
 });
@@ -344,7 +347,9 @@ describe("Dialog", () => {
 describe("SuspendedNotice", () => {
   it("FEATURE_LABELS の文言を出す", () => {
     const { container } = mount(<SuspendedNotice feature="route_planning" />);
-    expect(container.querySelector('[role="status"]')).toHaveTextContent("現在、経路作成は利用できません");
+    expect(container.querySelector('[role="status"]')).toHaveTextContent(
+      "現在、経路作成（徒歩・車）は利用できません",
+    );
   });
 });
 
@@ -368,5 +373,39 @@ describe("PhotoImage", () => {
     const { container } = mount(<PhotoImage src={null} alt="写真" category="gourmet" />);
     expect(container.querySelector("img")).toBeNull();
     expect(container.querySelector('[role="img"] svg')).not.toBeNull();
+  });
+});
+
+describe("Icon（v0.3 8.1 の追加）", () => {
+  it("新しいアイコン名で lucide の svg を描画する（aria-hidden、strokeWidth 2）", async () => {
+    const { Icon } = await import("./icons");
+    const names = [
+      "house",
+      "ruler",
+      "columns-3",
+      "arrow-up-down",
+      "wand-sparkles",
+      "list-checks",
+      "message-circle",
+      "navigation",
+      "train-front",
+    ] as const;
+    for (const name of names) {
+      const { container } = mount(<Icon name={name} size={20} />);
+      const svg = container.querySelector("svg");
+      expect(svg, name).not.toBeNull();
+      expect(svg!.getAttribute("aria-hidden")).toBe("true");
+      expect(svg!.getAttribute("stroke-width")).toBe("2");
+      expect(svg!.getAttribute("class")).toContain(`lucide-${name}`);
+    }
+  });
+});
+
+describe("SuspendedNotice（v0.3 の停止中機能）", () => {
+  it("公共交通の経路作成と AIと相談の停止中を FEATURE_LABELS で表示する", () => {
+    const transit = mount(<SuspendedNotice feature="route_planning_transit" />);
+    expect(transit.container.textContent).toContain("現在、経路作成（公共交通）は利用できません");
+    const ai = mount(<SuspendedNotice feature="ai_chat" />);
+    expect(ai.container.textContent).toContain("現在、AIと相談は利用できません");
   });
 });

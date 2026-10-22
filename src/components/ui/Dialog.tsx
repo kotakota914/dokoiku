@@ -1,6 +1,7 @@
 "use client";
 
-import { useId, useRef, type ReactNode } from "react";
+import { useId, useRef, useSyncExternalStore, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "./Button";
 import { IconButton } from "./IconButton";
 import { useEscapeKey, useFocusTrap, useLockBodyScroll } from "./useLockBodyScroll";
@@ -17,7 +18,22 @@ export interface DialogProps {
   className?: string;
 }
 
-/** 中央のモーダル。Escape・背景クリックで閉じる。フォーカスはダイアログ内に留め、閉じたら元の要素へ戻す */
+const noopSubscribe = () => () => undefined;
+
+/** ブラウザで描画しているか（SSR とハイドレーション中は false） */
+function useIsClient(): boolean {
+  return useSyncExternalStore(
+    noopSubscribe,
+    () => true,
+    () => false,
+  );
+}
+
+/**
+ * 中央のモーダル。Escape・背景クリックで閉じる。フォーカスはダイアログ内に留め、閉じたら元の要素へ戻す。
+ * document.body へポータルで描画する。呼び出し側が地図の上の重ね表示（pointer-events-none や z-index の
+ * 積み重ね）の中にあっても、背景の地図やヘッダー・下部ナビより手前に出て、操作できるようにするため。
+ */
 export function Dialog({ open, onClose, title, description, children, footer, className }: DialogProps) {
   const titleId = useId();
   const descId = useId();
@@ -26,8 +42,10 @@ export function Dialog({ open, onClose, title, description, children, footer, cl
   useEscapeKey(open, onClose);
   useFocusTrap(open, panelRef);
 
+  const isClient = useIsClient();
+
   if (!open) return null;
-  return (
+  const content = (
     <div className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center">
       <div aria-hidden="true" onClick={onClose} className="absolute inset-0 bg-text/40" />
       <div
@@ -60,6 +78,7 @@ export function Dialog({ open, onClose, title, description, children, footer, cl
       </div>
     </div>
   );
+  return isClient ? createPortal(content, document.body) : content;
 }
 
 export interface ConfirmDialogProps {

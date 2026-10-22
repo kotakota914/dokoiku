@@ -1,15 +1,18 @@
 "use client";
 
 /**
- * リスト内のスポット 1 行（S-07 / S-10）。
+ * リスト内のスポット 1 行（S-07 / S-13）。
  * - 「必ず行きたい」トグル（star、aria-pressed）：PATCH /lists/{id}/items/{spotId} { mustVisit }（F-4-4）
  * - 削除（trash-2）：DELETE /lists/{id}/items/{spotId}
+ * - 拠点からの直線距離（ruler、v0.3 F-4-8）：distanceM が渡されたときだけ「<拠点名>から 約2.3km」を出す
+ * - 比較の選択（v0.3 F-4-10）：selectable のときチェックボックスを出す（削除済みスポットは選べない）
  * - 削除済みスポット（spot が null）は「このスポットは削除されました」バッジ付きで表示し、経路作成の対象外である旨を出す（F-4 例外）
  * - readOnly（共有リスト）では操作ボタンを出さない
  */
 import Link from "next/link";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { api } from "@/lib/api/client";
+import { formatDistance } from "@/lib/domain/distance";
 import type { WishlistItem } from "@/lib/domain/types";
 import {
   Badge,
@@ -21,6 +24,7 @@ import {
   cn,
   useToast,
 } from "@/components/ui";
+import { ListIcon } from "./listIcons";
 import { useListApiError } from "./useListApiError";
 
 export interface ListItemRowProps {
@@ -28,6 +32,14 @@ export interface ListItemRowProps {
   item: WishlistItem;
   /** 共有リストなど閲覧のみ */
   readOnly?: boolean;
+  /** 拠点からの直線距離（m）。拠点が未設定なら渡さない */
+  distanceM?: number | null;
+  /** 距離の前に出す拠点名（「金沢駅から 約2.3km」） */
+  baseLabel?: string | null;
+  /** 比較の選択モード */
+  selectable?: boolean;
+  selected?: boolean;
+  onSelectedChange?: (spotId: string, selected: boolean) => void;
   onMustVisitChange?: (spotId: string, mustVisit: boolean) => void;
   onRemoved?: (spotId: string) => void;
   className?: string;
@@ -41,12 +53,18 @@ export function ListItemRow({
   listId,
   item,
   readOnly = false,
+  distanceM = null,
+  baseLabel = null,
+  selectable = false,
+  selected = false,
+  onSelectedChange,
   onMustVisitChange,
   onRemoved,
   className,
 }: ListItemRowProps) {
   const toast = useToast();
   const handleError = useListApiError();
+  const checkboxId = useId();
   const [mustVisit, setMustVisit] = useState(item.mustVisit);
   const [toggling, setToggling] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -91,15 +109,37 @@ export function ListItemRow({
       fallbackIconSize={20}
     />
   );
+  const showDistance = spot !== null && typeof distanceM === "number" && Number.isFinite(distanceM);
 
   return (
     <li
       className={cn(
         "flex items-center gap-3 rounded-card border border-border p-2",
         spot ? "bg-surface" : "bg-surface-muted",
+        selectable && selected && "border-primary bg-primary-soft",
         className,
       )}
+      data-selected={selectable ? selected : undefined}
     >
+      {selectable ? (
+        <label
+          htmlFor={checkboxId}
+          className={cn(
+            "flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-card",
+            spot ? "cursor-pointer" : "cursor-not-allowed opacity-50",
+          )}
+        >
+          <input
+            id={checkboxId}
+            type="checkbox"
+            className="size-5 accent-primary"
+            checked={selected}
+            disabled={!spot}
+            onChange={(e) => onSelectedChange?.(item.spotId, e.target.checked)}
+          />
+          <span className="sr-only">{name}を比較に選ぶ</span>
+        </label>
+      ) : null}
       {spot ? (
         <Link
           href={spotHref(spot.id)}
@@ -133,6 +173,13 @@ export function ListItemRow({
               <Badge icon="star" tone="warning">
                 必ず行きたい
               </Badge>
+            ) : null}
+            {showDistance ? (
+              <span className="inline-flex items-center gap-1" data-testid="item-distance">
+                <ListIcon name="ruler" size={16} />
+                {baseLabel ? `${baseLabel}から ` : ""}
+                {formatDistance(distanceM)}
+              </span>
             ) : null}
           </div>
         ) : (

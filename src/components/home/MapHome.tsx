@@ -6,12 +6,17 @@
  * - 上部：検索バー（/search へ）、カテゴリ絞り込み（F-1-7）
  * - 右下：現在地ボタン（F-1-8）
  * - 写真ピンのタップ：スマホはボトムシート、PC（lg 以上）は左パネルで SpotPeekCard を表示（F-1-6）
- * - 初期表示：URL ハッシュがあればその位置、なければ日本全体を出しつつ位置情報を 1 回だけ試す（F-1-1、Q17）
+ * - 初期表示：URL ハッシュがあればその位置、なければ DEFAULT_VIEW（金沢市中心部、ズーム13）を出しつつ
+ *   位置情報を 1 回だけ試す（F-1-1、v0.3 Q4-B、Q17）
+ * - 取得は区画単位（GET /spots/tiles。useViewportSpots がブラウザで区画キャッシュ。F-1-2）
+ * - ログイン中は「リスト表示の切替」：選んだリストのスポットを強調し、拠点を house で表示（F-1-9）
  */
 import Link from "next/link";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ListPicker } from "@/components/list/ListPicker";
+import { api } from "@/lib/api/client";
+import type { WishlistDetail } from "@/lib/domain/types";
 import {
   LocateButton,
   SpotMapLazy,
@@ -35,9 +40,16 @@ import {
   useIsDesktop,
 } from "@/components/ui";
 import { MAP_ZOOM } from "@/lib/domain/constants";
-import type { SpotSummary } from "@/lib/domain/types";
+import type { LatLng, SpotSummary } from "@/lib/domain/types";
 import { getInitialView, parseHash } from "@/lib/map";
 import { CategoryFilter } from "./CategoryFilter";
+import { ListHighlightButton, ListHighlightStatus } from "./ListHighlightControl";
+import {
+  highlightFitPoints,
+  toListHighlight,
+  withHighlightedSpots,
+  type ListHighlight,
+} from "./listHighlight";
 import { SpotPeekCard } from "./SpotPeekCard";
 import { VisibleSpotList } from "./VisibleSpotList";
 
@@ -49,7 +61,7 @@ function hasViewHash(): boolean {
 
 /**
  * 初期表示の位置情報（F-1-1）。ユーザー操作なしで 1 回だけ現在地を取り、取得できたら flyTo する。
- * 拒否・失敗時は何もせず日本全体のまま。URL ハッシュがある（詳細から戻った等）ときも何もしない。
+ * 拒否・失敗時は何もせず初期表示（DEFAULT_VIEW）のまま。URL ハッシュがある（詳細から戻った等）ときも何もしない。
  * SpotMapLazy の children として置き、useMap() で地図を使う。
  */
 function AutoLocate() {
@@ -72,7 +84,7 @@ function AutoLocate() {
         if (active) setPosition(loc);
       })
       .catch(() => {
-        // 拒否・失敗は黙って日本全体のまま（F-1-1）
+        // 拒否・失敗は黙って初期表示（DEFAULT_VIEW）のまま（F-1-1、v0.3 Q4-B）
         doneRef.current = true;
       });
     return () => {
@@ -105,16 +117,63 @@ function AutoLocate() {
   return null;
 }
 
-export function MapHome() {
+export interface MapHomeProps {
+  /** ログイン済み（表示名の設定まで完了）なら true。リスト表示の切替（F-1-9）を出す */
+  signedIn?: boolean;
+}
+
+export function MapHome({ signedIn = false }: MapHomeProps) {
   const isDesktop = useIsDesktop();
   const { loading: statusLoading, isSuspended } = useSystemStatus();
   const postCreateSuspended = !statusLoading && isSuspended("post_create");
 
-  const { data, spots, heatPoints, loading, error, refetch, setViewport, categories, setCategories } =
-    useViewportSpots();
+  const {
+    data,
+    spots: loadedSpots,
+    heatPoints,
+    loading,
+    complete,
+    error,
+    refetch,
+    setViewport,
+    categories,
+    setCategories,
+  } = useViewportSpots();
 
   const [selectedSpot, setSelectedSpot] = useState<SpotSummary | null>(null);
   const [listOpen, setListOpen] = useState(false);
+
+  // F-1-9：選んだリストの強調表示と拠点
+  const [highlight, setHighlight] = useState<ListHighlight | null>(null);
+  const [fitTo, setFitTo] = useState<LatLng[] | null>(null);
+  const selectHighlight = useCallback((next: ListHighlight) => {
+    setHighlight(next);
+    const points = highlightFitPoints(next);
+    setFitTo(points.length > 0 ? points : null);
+  }, []);
+  const clearHighlight = useCallback(() => {
+    setHighlight(null);
+    setFitTo(null);
+  }, []);
+  // リストに追加したら、表示中のリストなら取り直す（地図は動かさない）
+  const handleAddedToList = useCallback(
+    (list: { id: string }) => {
+      if (!highlight || highlight.listId !== list.id) return;
+      api
+        .get<WishlistDetail>(`/lists/${encodeURIComponent(list.id)}`)
+        .then((detail) => setHighlight((cur) => (cur?.listId === detail.id ? toListHighlight(detail) : cur)))
+        .catch(() => {
+          // 取り直せなくても前の表示のまま
+        });
+    },
+    [highlight],
+  );
+
+  // 区画から取得したスポット＋リストのスポット（未取得の区画にあっても強調表示できるように）
+  const spots = useMemo(
+    () => withHighlightedSpots(loadedSpots, highlight, categories),
+    [loadedSpots, highlight, categories],
+  );
 
   // 最新の取得結果に同じスポットがあれば件数などを新しい値にする
   const selected = useMemo(() => {
@@ -139,8 +198,10 @@ export function MapHome() {
     map.on("click", () => setSelectedSpot(null));
   }, []);
 
+  // 表示範囲の区画をすべて取得できたときだけ「投稿がありません」を出す（取得失敗はエラー表示しない。F-1 例外）
   const isEmptyArea =
     !loading &&
+    complete &&
     !error &&
     data !== null &&
     ((data.mode === "spots" && data.spots.length === 0) ||
@@ -194,6 +255,9 @@ export function MapHome() {
           useHash
           onViewportChange={setViewport}
           selectedSpotId={selected?.id ?? null}
+          highlightSpotIds={highlight?.spotIds ?? null}
+          baseMarker={highlight?.base ?? null}
+          fitTo={fitTo}
           onSpotTap={handleSpotTap}
           onMapReady={handleMapReady}
         >
@@ -218,6 +282,14 @@ export function MapHome() {
               <Icon name="search" size={20} />
               <span className="truncate">スポットを検索</span>
             </Link>
+            {signedIn ? (
+              <ListHighlightButton
+                active={highlight}
+                onSelect={selectHighlight}
+                onClear={clearHighlight}
+                className="pointer-events-auto"
+              />
+            ) : null}
             {loading ? (
               <span className="pointer-events-auto flex size-11 items-center justify-center rounded-full border border-border bg-surface shadow-[var(--shadow-card)]">
                 <Spinner size={20} label="スポットを取得中" />
@@ -225,6 +297,13 @@ export function MapHome() {
             ) : null}
           </div>
           <CategoryFilter value={categories} onChange={setCategories} className="pointer-events-auto" />
+          {signedIn && highlight ? (
+            <ListHighlightStatus
+              highlight={highlight}
+              onClear={clearHighlight}
+              className="pointer-events-auto"
+            />
+          ) : null}
         </div>
 
         {/* 範囲内に投稿なし（F-1 例外）・API エラー */}
@@ -285,7 +364,14 @@ export function MapHome() {
       ) : null}
 
       {/* 行きたい場所リストに追加（リスト担当の部品） */}
-      {selected ? <ListPicker spotId={selected.id} open={listOpen} onClose={closeListPicker} /> : null}
+      {selected ? (
+        <ListPicker
+          spotId={selected.id}
+          open={listOpen}
+          onClose={closeListPicker}
+          onAdded={handleAddedToList}
+        />
+      ) : null}
     </div>
   );
 }

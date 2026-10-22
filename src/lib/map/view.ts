@@ -1,7 +1,14 @@
 /**
  * 地図の表示位置に関する純粋ロジック（F-1-1、URL ハッシュ）。ブラウザ・テストの両方で動く。
  */
-import { JAPAN_CENTER, MAP_ZOOM, mapModeForZoom, type MapMode } from "@/lib/domain/constants";
+import {
+  DEFAULT_VIEW,
+  JAPAN_CENTER,
+  MAP_ZOOM,
+  USE_DEFAULT_VIEW_WHEN_DENIED,
+  mapModeForZoom,
+  type MapMode,
+} from "@/lib/domain/constants";
 import type { LatLng } from "@/lib/domain/types";
 
 /** 表示範囲（GET /spots の bbox と同じ並び） */
@@ -17,10 +24,31 @@ export interface MapView {
   zoom: number;
 }
 
-/** F-1-1：位置情報があれば現在地周辺（ズーム13）、なければ日本全体（ズーム5） */
-export function getInitialView(position: LatLng | null | undefined): MapView {
+export interface InitialViewOptions {
+  /**
+   * 位置情報が無いとき DEFAULT_VIEW（金沢市中心部、ズーム13）を使うか（v0.3 Q4-B、ADR-0026）。
+   * false なら日本全体（ズーム5）。既定は USE_DEFAULT_VIEW_WHEN_DENIED
+   */
+  useDefaultWhenDenied?: boolean;
+}
+
+/**
+ * F-1-1：位置情報があれば現在地周辺（ズーム13）。
+ * なければ DEFAULT_VIEW（金沢市中心部、ズーム13）、USE_DEFAULT_VIEW_WHEN_DENIED が false なら日本全体（ズーム5）。
+ * URL ハッシュがあるときは呼び出し側（MapLibre の hash オプション）がそちらを優先する。
+ */
+export function getInitialView(
+  position: LatLng | null | undefined,
+  { useDefaultWhenDenied = USE_DEFAULT_VIEW_WHEN_DENIED }: InitialViewOptions = {},
+): MapView {
   if (position && Number.isFinite(position.lat) && Number.isFinite(position.lng)) {
     return { center: { lat: position.lat, lng: position.lng }, zoom: MAP_ZOOM.initialWithLocation };
+  }
+  if (useDefaultWhenDenied) {
+    return {
+      center: { lat: DEFAULT_VIEW.center.lat, lng: DEFAULT_VIEW.center.lng },
+      zoom: DEFAULT_VIEW.zoom,
+    };
   }
   return { center: { lat: JAPAN_CENTER.lat, lng: JAPAN_CENTER.lng }, zoom: MAP_ZOOM.initialWithoutLocation };
 }

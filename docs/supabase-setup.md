@@ -6,6 +6,7 @@
 
 - `supabase/migrations/0001_init.sql`：テーブル、インデックス、トリガー、RLS、RPC 関数
 - `supabase/migrations/0002_storage.sql`：Storage バケット `post-images` と読み取り policy
+- `supabase/migrations/0003_v03.sql`：v0.3 の変更（人気度 `spots.popularity` と `recompute_popularity()`、`spots.source` の `seed`、拠点 `wishlists.base_label` / `base_location`、`plans.method`、`travel_time_cache.time_bucket` と主キー、`api_usage.feature` の追加）
 - `supabase/seed.sql`：金沢市・野々市市 44 スポットと投稿のサンプル（`node scripts/seed/generate-seed-sql.mjs` で `seed-data/kanazawa/spots.json` から生成）
 - `scripts/db/validate-migrations.sh`：ローカル PostgreSQL で migration と seed を検証（`npm run db:validate`）
 - `src/lib/repo/supabase/`：Supabase 実装の Repository
@@ -30,7 +31,8 @@
 1. Dashboard > SQL Editor を開く。
 2. `supabase/migrations/0001_init.sql` の内容を貼り付けて Run。
 3. `supabase/migrations/0002_storage.sql` を貼り付けて Run。
-4. 開発・デモ用のデータが要るなら `supabase/seed.sql` を貼り付けて Run。
+4. `supabase/migrations/0003_v03.sql` を貼り付けて Run（v0.1 で作ったプロジェクトもこれだけ流せば v0.3 になる。既存のプランは `method = 'auto'`、既存の移動時間キャッシュは `time_bucket = 'any'` になる）。
+5. 開発・デモ用のデータが要るなら `supabase/seed.sql` を貼り付けて Run（`recompute_popularity()` を使うので 0003 の後に流す）。
    - seed は `auth.users` にサンプル投稿者（固定 UUID）を 1 行入れる。本番では seed を流さない。
    - 何度流しても同じ結果になる（`on conflict do nothing`）。
 
@@ -126,7 +128,9 @@ DATABASE_URL=postgres://postgres:password@localhost:5432/postgres npm run db:val
 SKIP_STORAGE=1 npm run db:validate
 ```
 
-使い捨て DB `dokoiko_validate` を作り直し、`scripts/db/local-stubs.sql`（auth / storage スキーマと役割のスタブ）→ migration → seed → `scripts/db/smoke.sql`（bbox 検索 40 件、近傍検索、統計、RLS）の順に流す。1 つでも失敗すると非 0 で終了する。
+使い捨て DB `dokoiko_validate` を作り直し、`scripts/db/local-stubs.sql`（auth / storage スキーマと役割のスタブ）→ `supabase/migrations/*.sql`（ファイル名順）→ seed → `scripts/db/smoke.sql`（bbox 検索 40 件、近傍検索、統計、RLS、v0.3 の人気度・拠点・`plans.method`・`time_bucket`）の順に流す。1 つでも失敗すると非 0 で終了する。
+
+PostgreSQL が止まっている場合（Debian / Ubuntu の `postgresql-16` パッケージ）は `pg_ctlcluster 16 main start` で起動する。
 
 ## 9. RLS と権限の要点（要件定義書 10.3）
 
@@ -136,4 +140,61 @@ SKIP_STORAGE=1 npm run db:validate
 - `wishlists` / `wishlist_items` / `plans`：本人のみ。共有リストは service role が `share_token` で読む。
 - `reports` / `api_usage` / `travel_time_cache`：policy なし（service role のみ）。
 - スポットの統計（投稿数・代表写真・中央値・時間帯分布・カテゴリ）は `recompute_spot_stats()`、いいね数はトリガーで更新する。クライアントは `spots` を直接更新できない。
+- 人気度（`spots.popularity`）は `recompute_popularity()`（service role のみ実行可）で更新する。
+- 拠点（`wishlists.base_label` / `base_location`）は既存の `wishlists_own` policy（本人のみ）の対象。共有リストの閲覧（`share_token`）では拠点を返さない。
 - 管理者にするには SQL Editor で `update profiles set is_admin = true where id = '<uuid>'`。
+
+## 10. 定期処理（pg_cron）
+
+要件定義書 12章の定期処理のうち、DB の中で完結するものは Supabase Cron（`pg_cron`）で動かす。migration では登録しない（ローカル検証環境に `pg_cron` が無いため）。プロジェクトごとに 1 回だけ次の手順で登録する。
+
+### 10.1 pg_cron を有効にする
+
+1. Dashboard > **Integrations** > **Cron**（画面によっては Database > Extensions）を開く。
+2. `pg_cron` を有効にする（Extensions の一覧で `pg_cron` を検索してスイッチを入れる。スキーマは既定の `pg_catalog` のまま）。
+3. SQL Editor で有効になったことを確認する。
+
+```sql
+select extname, extversion from pg_extension where extname = 'pg_cron';
+```
+
+SQL で有効にする場合は `create extension if not exists pg_cron with schema pg_catalog;`。
+
+### 10.2 人気度の更新（1時間ごと、F-1-5 / ADR-0025）
+
+```sql
+select cron.schedule(
+  'recompute-popularity',          -- ジョブ名（同じ名前で再登録すると上書き）
+  '0 * * * *',                     -- 毎時 0 分（UTC。1 時間ごとなのでタイムゾーンは影響しない）
+  $$select public.recompute_popularity();$$
+);
+```
+
+- `recompute_popularity(p_prefecture text default null, p_city text default null)` は市区町村ごと（スポット 10 件未満の市区町村は都道府県ごと）に投稿数の順位を付け、`spots.popularity` を更新する。戻り値は変わった件数。
+- アプリは投稿の作成・削除のあとに、その市区町村を含む都道府県だけを再計算する（`SpotsRepo.recomputePopularity({ prefecture, city })`）。Cron はその取りこぼしを 1 時間ごとに埋める。
+- 手動で全件を計算し直すときは SQL Editor で `select public.recompute_popularity();`。
+
+### 10.3 移動時間キャッシュの削除（毎日）
+
+```sql
+select cron.schedule(
+  'purge-travel-time-cache',
+  '30 19 * * *',                   -- 毎日 4:30（日本時間）= 19:30 UTC
+  $$delete from public.travel_time_cache
+     where (mode = 'transit' and fetched_at < now() - interval '7 days')
+        or (mode in ('walking', 'driving') and fetched_at < now() - interval '30 days');$$
+);
+```
+
+期限は `TRAVEL_CACHE_DAYS`（公共交通 7 日、徒歩・車 30 日）と合わせる。アプリ側からは `TravelCacheRepo.purgeExpired()`（引数を省略すると mode ごとの期限）でも同じ削除ができる。
+
+### 10.4 確認と停止
+
+```sql
+-- 登録済みのジョブ
+select jobid, jobname, schedule, command, active from cron.job;
+-- 直近の実行結果（失敗したら status = 'failed' と return_message に理由）
+select jobid, status, return_message, start_time from cron.job_run_details order by start_time desc limit 20;
+-- 停止（登録の取り消し）
+select cron.unschedule('recompute-popularity');
+```

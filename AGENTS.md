@@ -36,6 +36,26 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 | Q16 | 初期データは金沢市・野々市市 44 スポット（金沢工業大学の学内 8 件を含む）。元データは `seed-data/kanazawa/spots.json`、memory モードの seed と supabase の seed.sql（生成スクリプト）が共用 |
 | Q17 | B 相当：URL は `/spots/[spotId]`。スマホでは地図の上に全画面シート風に表示し、戻ると地図へ。地図の位置は URL ハッシュで保持 |
 
+### v0.3（2026/10/21 更新）の確定事項（15章の推奨をすべて採用）
+
+| Q | 決定 |
+| --- | --- |
+| v0.3 Q1 | B：拠点はリストに1つ（名前＋座標）。拠点からの直線距離と距離順の並べ替えまで。移動時間の目安・同心円はβ版以降 |
+| v0.3 Q2 | 公共交通の移動時間は Google Routes API（computeRouteMatrix）。取得できない区間は「直線距離 ÷ 15km/h ＋ 待ち10分」の概算で「目安」表示。徒歩・車は OpenRouteService のまま（統一しない）。経路の形（directions）は取得しない（ADR-0016）。当日の道案内は保存済みプランの「ナビを開始」（Google マップ URL） |
+| v0.3 Q3 | AI（Gemini）へ送るのは会話文・リスト内のスポット名・共通の条件だけ。ユーザー名・メールは送らない。会話は DB に保存しない。プライバシーポリシーに明記 |
+| v0.3 Q4 | B：位置情報が拒否された／取れないときの初期表示は金沢市中心部（ズーム13）。`DEFAULT_VIEW` と `USE_DEFAULT_VIEW_WHEN_DENIED` で切り替え |
+| v0.3 Q5 | A：写真はチーム撮影を基本。Commons の CC 写真を使う場合はクレジットを表示（既存の `photo-credits.md` の仕組みを維持） |
+| v0.3 Q6 | 「優先すること」は 4 択で確定。重みの初期値は `PRIORITY_WEIGHTS`（11.3） |
+
+v0.3 で変わった主な契約（詳細は `docs/v0.3-diff.md`）：
+- 経路作成の対象は最大 **8 か所**（`LIMITS.planSpotsMax`）。訪問順は全探索。
+- 移動手段は `transit`（初期値）/ `walking` / `driving`。作り方は `auto` / `preferences` / `chat`。
+- `POST /plans/compute` は最大 3 案の `candidates` を返す。`PlanItem.next` に区間の移動手段・移動時間・概算フラグ。
+- `POST /plans/chat`（Gemini）。`GET /plans/{planId}` は各区間の `segments[].navUrl` を含む。
+- 人気度は市区町村内の投稿数の相対順位（`POPULARITY_RANKING`）。
+- 地図のスポット取得は `GET /spots/tiles/{z}/{x}/{y}`（z = 8 / 11 / 14、ブラウザ側で区画キャッシュ）。
+- リストに拠点（`baseLabel` / `baseLocation`）。`PATCH /lists/{listId}` で名前と拠点を変更。
+
 追加の設計判断：
 - `cacheComponents` は使わない（ほぼ全ページ動的）。
 - データ保存先は `DATA_BACKEND=memory|supabase` で切り替える。memory モードは Supabase なしで動き、開発・デモ・テストに使う。
@@ -72,6 +92,7 @@ docs/                    要件定義書、decisions.md、setup.md
 - `src/lib/validation/schemas.ts`
 - `src/lib/repo/types.ts`、`src/lib/repo/index.ts`
 - `src/lib/auth/server.ts`、`src/lib/api/*`、`src/lib/supabase/*`、`src/lib/config.ts`
+- `src/lib/map/tiles.ts`（タイル番号と bbox の変換。サーバーとブラウザで共用）
 - `src/app/globals.css`（トークンの追加は可。既存の名前は変えない）
 - `package.json`（依存の追加は統合担当だけが行う）
 

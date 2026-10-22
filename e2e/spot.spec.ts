@@ -4,7 +4,9 @@
 import { SPOTS, expect, test } from "./helpers";
 
 test.describe("スポット詳細", () => {
-  test("名前・投稿数・24 本の棒グラフ・投稿カード・Google マップのリンクが出る", async ({ page }) => {
+  test("名前・投稿数・24 本の棒グラフ・投稿カードが出て、外部の地図アプリへのリンクは無い", async ({
+    page,
+  }) => {
     const spot = SPOTS.kenrokuen;
     const res = await page.goto(`/spots/${spot.id}`);
     expect(res?.status()).toBe(200);
@@ -28,11 +30,10 @@ test.describe("スポット詳細", () => {
     await expect(cards.first()).toBeVisible();
     expect(await cards.count()).toBeGreaterThan(0);
 
-    // Google マップで開く
-    const gmap = page.getByRole("link", { name: "Googleマップで開く" });
-    await expect(gmap).toBeVisible();
-    await expect(gmap).toHaveAttribute("href", /google\.com\/maps/);
-    await expect(gmap).toHaveAttribute("target", "_blank");
+    // v0.3 F-3-5：Google マップなど外部の地図アプリへのリンクは置かない（SNS 共有は残す）
+    await expect(page.getByRole("link", { name: "Googleマップで開く" })).toHaveCount(0);
+    await expect(page.locator('main a[href*="google.com/maps"]')).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "このスポットを共有" })).toBeVisible();
   });
 
   test("未ログインで いいね を押すとログイン画面へ（戻り先付き）", async ({ page }) => {

@@ -1,6 +1,7 @@
 /**
- * GET    /api/v1/plans/{planId}（F-5-7）：保存済みプラン。本人のみ。Plan。
- * DELETE /api/v1/plans/{planId}（F-5-7）：プラン削除。204。
+ * GET    /api/v1/plans/{planId}（F-5-11 / F-5-12）：保存済みプラン。本人のみ。
+ *        PlanWithNav（各区間の「ナビを開始」用 Google マップ URL を segments に含む）。
+ * DELETE /api/v1/plans/{planId}（F-5-11）：プラン削除。204。
  * 他人のプランは 403、無ければ 404、ID が UUID でなければ 400。
  */
 import { json, noContent, route } from "@/lib/api/handler";

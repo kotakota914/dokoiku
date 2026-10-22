@@ -4,7 +4,7 @@
 #
 # 1. 使い捨て DB dokoiko_validate を作り直す
 # 2. Supabase の auth / storage スキーマと役割のスタブを入れる（scripts/db/local-stubs.sql）
-# 3. supabase/migrations/0001_init.sql -> 0002_storage.sql -> supabase/seed.sql を順に流す
+# 3. supabase/migrations/*.sql（ファイル名順。0001_init -> 0002_storage -> 0003_v03 ...）-> supabase/seed.sql を順に流す
 # 4. scripts/db/smoke.sql のスモークテスト（bbox 検索、近傍検索、統計、RLS）を流す
 #
 # 接続先：
@@ -77,14 +77,15 @@ echo "接続方法: $PSQL_MODE / 検証用 DB: $DB_NAME"
 run_admin "drop database if exists ${DB_NAME} with (force)"
 run_admin "create database ${DB_NAME}"
 
-# スタブ -> migration -> seed -> スモークテスト
+# スタブ -> migration（ファイル名順）-> seed -> スモークテスト
 run_file "$STUBS_FILE"
-run_file "$MIGRATIONS_DIR/0001_init.sql"
-if [ "${SKIP_STORAGE:-0}" = "1" ]; then
-  echo "==> 0002_storage.sql（SKIP_STORAGE=1 のため省略）"
-else
-  run_file "$MIGRATIONS_DIR/0002_storage.sql"
-fi
+for migration in "$MIGRATIONS_DIR"/*.sql; do
+  if [ "${SKIP_STORAGE:-0}" = "1" ] && [ "$(basename "$migration")" = "0002_storage.sql" ]; then
+    echo "==> 0002_storage.sql（SKIP_STORAGE=1 のため省略）"
+    continue
+  fi
+  run_file "$migration"
+done
 run_file "$SEED_FILE"
 run_file "$SMOKE_FILE"
 

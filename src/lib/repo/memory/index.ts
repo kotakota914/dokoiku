@@ -10,15 +10,18 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import {
-  LIMITS,
+  TRAVEL_CACHE_DAYS,
   type Category,
   type Feature,
+  type Popularity,
   type StayDuration,
   type TravelMode,
 } from "@/lib/domain/constants";
+import { rankPopularity } from "@/lib/domain/popularity";
 import type {
   ApiUsage,
   HeatPoint,
+  LatLng,
   NearbySpot,
   Page,
   Plan,
@@ -70,6 +73,7 @@ import {
   fromSnapshot,
   likeKey,
   toSnapshot,
+  TRAVEL_BUCKET_ANY,
   travelKey,
   usageKey,
   type MemoryState,
@@ -99,9 +103,10 @@ export interface MemoryTravelCacheRepo extends TravelCacheRepo {
   getMany(
     pairs: { fromKey: string; toKey: string }[],
     mode: TravelMode,
+    timeBucket?: string,
     now?: Date,
   ): Promise<Map<string, TravelTimeEntry>>;
-  purgeExpired(olderThanDays: number, now?: Date): Promise<number>;
+  purgeExpired(olderThanDays?: number, now?: Date): Promise<number>;
 }
 export interface MemoryStorageRepo extends StorageRepo {
   createSignedUploads(userId: string, files: UploadRequestFile[], now?: Date): Promise<UploadTarget[]>;
@@ -200,6 +205,7 @@ class MemoryRepositoryImpl implements MemoryRepository {
     this.dataDir = options.dataDir ?? serverConfig.dataDir;
     this.persist = options.persist ?? serverConfig.memoryPersist;
     this.state = this.loadInitialState(seed);
+    this.ensurePopularity();
 
     this.profiles = this.buildProfiles();
     this.spots = this.buildSpots();
@@ -250,6 +256,44 @@ class MemoryRepositoryImpl implements MemoryRepository {
       for (const l of data.likes) state.likes.set(likeKey(l.userId, l.postId), l);
     }
     return state;
+  }
+
+  /** 人気度（F-1-5）が未計算なら全件計算する（seed 直後や v0.3 より前の memory.json を読んだとき） */
+  private ensurePopularity(): void {
+    if (this.state.spots.size === 0 || this.state.popularity.size > 0) return;
+    this.applyPopularity([...this.state.spots.values()]);
+  }
+
+  /**
+   * 対象スポットの人気度を相対順位で計算して保存し、変わった件数を返す。
+   * 順位の単位は市区町村または都道府県なので、対象は都道府県単位で渡せばよい。
+   */
+  private applyPopularity(targets: Spot[]): number {
+    const ranked = rankPopularity(
+      targets.map((s) => ({ id: s.id, prefecture: s.prefecture, city: s.city, postCount: s.postCount })),
+    );
+    let changed = 0;
+    for (const [spotId, popularity] of ranked) {
+      const before = this.state.popularity.get(spotId) ?? "normal";
+      this.state.popularity.set(spotId, popularity);
+      if (before !== popularity) changed += 1;
+    }
+    return changed;
+  }
+
+  /** scope に合うスポット（都道府県が同じもの。市区町村だけ指定されたらその市区町村を含む都道府県） */
+  private popularityTargets(scope?: { prefecture?: string | null; city?: string | null }): Spot[] {
+    const all = [...this.state.spots.values()];
+    if (!scope || (scope.prefecture == null && scope.city == null)) return all;
+    let prefectures: Set<string | null>;
+    if (scope.prefecture != null) {
+      prefectures = new Set([scope.prefecture]);
+    } else {
+      prefectures = new Set(
+        all.filter((s) => (s.city ?? "") === (scope.city ?? "")).map((s) => s.prefecture),
+      );
+    }
+    return all.filter((s) => prefectures.has(s.prefecture));
   }
 
   /** 変更のたびに呼ぶ。500ms デバウンスで保存する */
@@ -355,6 +399,11 @@ class MemoryRepositoryImpl implements MemoryRepository {
     return null;
   }
 
+  /** 順位で計算した人気度を優先し、未計算のときだけ件数しきい値（v0.1）で代替する */
+  private popularityOfSpot(spot: Spot): Popularity {
+    return this.state.popularity.get(spot.id) ?? popularityOf(spot.postCount);
+  }
+
   private toSpotSummary(spot: Spot): SpotSummary {
     return {
       id: spot.id,
@@ -364,7 +413,7 @@ class MemoryRepositoryImpl implements MemoryRepository {
       category: spot.category,
       postCount: spot.postCount,
       likeCount: spot.likeCount,
-      popularity: popularityOf(spot.postCount),
+      popularity: this.popularityOfSpot(spot),
       coverThumbUrl: this.coverThumbUrl(spot),
       prefecture: spot.prefecture,
       city: spot.city,
@@ -393,10 +442,10 @@ class MemoryRepositoryImpl implements MemoryRepository {
     const spot = this.state.spots.get(spotId);
     if (!spot) return;
     const posts = [...this.state.posts.values()].filter((p) => p.spotId === spotId);
-    this.state.spots.set(
-      spotId,
-      computeSpotStats(spot, posts, (id) => this.imagesOf(id)),
-    );
+    const next = computeSpotStats(spot, posts, (id) => this.imagesOf(id));
+    this.state.spots.set(spotId, next);
+    // 投稿の増減で順位が変わるので、同じ都道府県（市区町村の順位もこの中に含まれる）を再計算する
+    this.applyPopularity(this.popularityTargets({ prefecture: next.prefecture, city: next.city }));
   }
 
   private toWishlist(row: WishlistRow): Wishlist {
@@ -425,6 +474,7 @@ class MemoryRepositoryImpl implements MemoryRepository {
       date: plan.date,
       spotCount: plan.spotCount,
       totalTravelMin: plan.totalTravelMin,
+      method: plan.method,
       createdAt: plan.createdAt,
     };
   }
@@ -621,6 +671,11 @@ class MemoryRepositoryImpl implements MemoryRepository {
         this.recomputeSpot(spotId);
         this.changed();
       },
+      recomputePopularity: async (scope) => {
+        const changed = this.applyPopularity(this.popularityTargets(scope));
+        this.changed();
+        return changed;
+      },
     };
   }
 
@@ -769,7 +824,15 @@ class MemoryRepositoryImpl implements MemoryRepository {
       listByUser: async (userId) => rowsOf(userId).map((w) => this.toWishlist(w)),
       countByUser: async (userId) => rowsOf(userId).length,
       create: async ({ userId, name }) => {
-        const row: WishlistRow = { id: newId(), userId, name, shareToken: null, createdAt: nowIso() };
+        const row: WishlistRow = {
+          id: newId(),
+          userId,
+          name,
+          baseLabel: null,
+          baseLocation: null,
+          shareToken: null,
+          createdAt: nowIso(),
+        };
         this.state.wishlists.set(row.id, row);
         this.changed();
         return this.toWishlist(row);
@@ -787,6 +850,19 @@ class MemoryRepositoryImpl implements MemoryRepository {
         const row = this.state.wishlists.get(id);
         if (!row) throw new Error(`wishlist not found: ${id}`);
         row.name = name;
+        this.changed();
+        return this.toWishlist(row);
+      },
+      setBase: async (id, base: { label: string; location: LatLng } | null) => {
+        const row = this.state.wishlists.get(id);
+        if (!row) throw new Error(`wishlist not found: ${id}`);
+        if (base) {
+          row.baseLabel = base.label;
+          row.baseLocation = { lat: base.location.lat, lng: base.location.lng };
+        } else {
+          row.baseLabel = null;
+          row.baseLocation = null;
+        }
         this.changed();
         return this.toWishlist(row);
       },
@@ -865,6 +941,7 @@ class MemoryRepositoryImpl implements MemoryRepository {
           date: params.date,
           spotCount: result.items.filter((i) => i.type === "spot").length,
           totalTravelMin: result.totalTravelMin,
+          method: params.method,
           createdAt: nowIso(),
           params,
           result,
@@ -888,32 +965,39 @@ class MemoryRepositoryImpl implements MemoryRepository {
   // ----- travelCache -----
 
   private buildTravelCache(): MemoryTravelCacheRepo {
-    const isExpired = (entry: TravelTimeEntry, now: Date) =>
-      new Date(entry.fetchedAt).getTime() + LIMITS.travelCacheDays * 86_400_000 <= now.getTime();
+    // 期限は mode ごと（10.2：徒歩・車は 30 日、公共交通は 7 日）
+    const isExpired = (entry: TravelTimeEntry, now: Date, days = TRAVEL_CACHE_DAYS[entry.mode]) =>
+      new Date(entry.fetchedAt).getTime() + days * 86_400_000 <= now.getTime();
     return {
       getMany: async (
         pairs: { fromKey: string; toKey: string }[],
         mode: TravelMode,
+        timeBucket: string = TRAVEL_BUCKET_ANY,
         now: Date = new Date(),
       ) => {
         const out = new Map<string, TravelTimeEntry>();
         for (const { fromKey, toKey } of pairs) {
-          const entry = this.state.travelCache.get(travelKey(fromKey, toKey, mode));
+          const entry = this.state.travelCache.get(travelKey(fromKey, toKey, mode, timeBucket));
           if (entry && !isExpired(entry, now)) out.set(`${fromKey}|${toKey}`, entry);
         }
         return out;
       },
       putMany: async (entries) => {
         const fetchedAt = nowIso();
-        for (const e of entries)
-          this.state.travelCache.set(travelKey(e.fromKey, e.toKey, e.mode), { ...e, fetchedAt });
+        for (const e of entries) {
+          const timeBucket = e.timeBucket || TRAVEL_BUCKET_ANY;
+          this.state.travelCache.set(travelKey(e.fromKey, e.toKey, e.mode, timeBucket), {
+            ...e,
+            timeBucket,
+            fetchedAt,
+          });
+        }
         if (entries.length) this.changed();
       },
-      purgeExpired: async (olderThanDays: number, now: Date = new Date()) => {
-        const threshold = now.getTime() - olderThanDays * 86_400_000;
+      purgeExpired: async (olderThanDays?: number, now: Date = new Date()) => {
         let n = 0;
         for (const [key, e] of [...this.state.travelCache]) {
-          if (new Date(e.fetchedAt).getTime() <= threshold) {
+          if (isExpired(e, now, olderThanDays)) {
             this.state.travelCache.delete(key);
             n += 1;
           }

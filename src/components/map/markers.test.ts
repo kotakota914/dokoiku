@@ -1,8 +1,15 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { beforeAll, describe, expect, it } from "vitest";
+import { vi } from "vitest";
 import {
+  baseAriaLabel,
   clusterAriaLabel,
+  createBaseElement,
+  fadeInMarker,
+  fadeOutMarker,
+  pinAriaLabel,
+  updateBaseElement,
   createClusterElement,
   createPinElement,
   createStopElement,
@@ -246,5 +253,100 @@ describe("createStopElement", () => {
     expect(el.classList.contains("bg-text")).toBe(true);
     const origin = within(() => createStopElement({ label: "発", kind: "origin" }));
     expect(origin.getAttribute("aria-label")).toBe("出発地");
+  });
+});
+
+describe("v0.3 F-1-9 リストの強調表示", () => {
+  it("写真ピン：highlighted で bookmark の小バッジと外側の輪、読み上げに添える。外すと戻る", async () => {
+    const el = within(() => createPinElement({ ...basePin, highlighted: true }));
+    await flush();
+    expect(el.dataset.highlighted).toBe("true");
+    expect(el.querySelector('[data-highlight="true"]')).not.toBeNull();
+    expect(el.getAttribute("aria-label")).toBe("兼六園（投稿3件）、表示中のリストのスポット");
+    const frame = el.querySelector<HTMLElement>(".dk-pin__frame")!;
+    expect(frame.style.boxShadow).toContain("var(--color-primary)");
+    // 人気度の枠色は残る
+    expect(frame.style.borderColor).toBe("var(--color-popularity-normal)");
+    within(() => updatePinElement(el, { ...basePin, highlighted: false }));
+    expect(el.dataset.highlighted).toBeUndefined();
+    expect(el.querySelector('[data-highlight="true"]')).toBeNull();
+    expect(frame.style.boxShadow).toBe("");
+    expect(el.getAttribute("aria-label")).toBe("兼六園（投稿3件）");
+    expect(pinAriaLabel({ name: "A", postCount: 25, popularity: "very_popular", highlighted: true })).toBe(
+      "A（投稿25件）、大人気、表示中のリストのスポット",
+    );
+  });
+
+  it("写真の束：highlightCount > 0 なら bookmark の小バッジ、読み上げに数を添える", async () => {
+    const spec = {
+      key: "c:1",
+      postCount: 10,
+      spotCount: 3,
+      coverThumbUrl: null,
+      name: "兼六園",
+      category: "history" as const,
+      highlightCount: 2,
+    };
+    const el = within(() => createClusterElement(spec));
+    await flush();
+    expect(el.dataset.highlighted).toBe("true");
+    expect(el.querySelector('[data-highlight="true"]')).not.toBeNull();
+    expect(el.getAttribute("aria-label")).toBe(
+      "兼六園 ほか2か所（投稿10件）、表示中のリストのスポット2か所を含む。タップで拡大",
+    );
+    within(() => updateClusterElement(el, { ...spec, highlightCount: 0 }));
+    expect(el.dataset.highlighted).toBeUndefined();
+    expect(el.querySelector('[data-highlight="true"]')).toBeNull();
+    expect(clusterAriaLabel({ ...spec, spotCount: 1, highlightCount: 1 })).toBe(
+      "兼六園（投稿10件）、表示中のリストのスポット",
+    );
+  });
+
+  it("拠点のマーカー：house アイコンと名前、aria-label は「拠点：名前」", async () => {
+    const el = within(() => createBaseElement("金沢駅"));
+    await flush();
+    expect(el.getAttribute("role")).toBe("img");
+    expect(el.getAttribute("aria-label")).toBe("拠点：金沢駅");
+    expect(el.textContent).toContain("金沢駅");
+    expect(el.querySelector(".lucide-house")).not.toBeNull();
+    updateBaseElement(el, "ホテル");
+    expect(el.getAttribute("aria-label")).toBe("拠点：ホテル");
+    expect(el.textContent).toContain("ホテル");
+    expect(baseAriaLabel("")).toBe("拠点");
+  });
+});
+
+describe("表示方式の切り替えの透明度アニメーション（F-1-3）", () => {
+  it("Web Animations API で 0.3 秒の透明度を動かし、消えるときは終了後に done", () => {
+    const el = document.createElement("span");
+    const anim: { onfinish: (() => void) | null; oncancel: (() => void) | null } = {
+      onfinish: null,
+      oncancel: null,
+    };
+    const animate = vi.fn(() => anim);
+    (el as unknown as { animate: typeof animate }).animate = animate;
+    fadeInMarker(el, 300);
+    expect(animate).toHaveBeenLastCalledWith(
+      [{ opacity: 0 }, { opacity: 1 }],
+      expect.objectContaining({ duration: 300 }),
+    );
+    const done = vi.fn();
+    fadeOutMarker(el, done, 300);
+    expect(done).not.toHaveBeenCalled();
+    expect(el.getAttribute("aria-hidden")).toBe("true");
+    anim.onfinish?.();
+    expect(done).toHaveBeenCalledTimes(1);
+  });
+
+  it("アニメーションできない環境（animate なし・0 秒）ではすぐ消す", () => {
+    const el = document.createElement("span");
+    (el as unknown as { animate?: unknown }).animate = undefined;
+    const done = vi.fn();
+    fadeOutMarker(el, done, 300);
+    expect(done).toHaveBeenCalledTimes(1);
+    const done2 = vi.fn();
+    fadeOutMarker(document.createElement("span"), done2, 0);
+    expect(done2).toHaveBeenCalledTimes(1);
+    expect(() => fadeInMarker(el, 300)).not.toThrow();
   });
 });

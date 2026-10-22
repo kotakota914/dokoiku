@@ -3,7 +3,9 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { LIMITS, MAP_ZOOM } from "@/lib/domain/constants";
+import { LIMITS, MAP_ZOOM, TILE_CACHE_MAX_AGE_SEC, TILE_MAX_SPOTS } from "@/lib/domain/constants";
+import { lngLatToTile, tileToBbox } from "@/lib/map/tiles";
+import { inBbox as pointInBbox } from "@/lib/utils/geo";
 import { createMemoryRepository, SEED_USER_IDS } from "@/lib/repo/memory";
 import { seedUuid } from "@/lib/repo/memory/seed";
 import { nearbyQuerySchema, spotSearchQuerySchema, spotsInViewQuerySchema } from "@/lib/validation/schemas";
@@ -11,6 +13,7 @@ import {
   canCreateSpot,
   getNearbySpots,
   getSpotDetail,
+  getSpotsInTile,
   getSpotsInView,
   listSpotPosts,
   searchSpots,
@@ -95,6 +98,43 @@ describe("getSpotsInView", () => {
     const q = spotsInViewQuerySchema.parse({ bbox: "139.5,35.5,139.9,35.9", zoom: "14" });
     const res = await getSpotsInView(repo, q);
     expect(res).toEqual({ mode: "spots", spots: [] });
+  });
+});
+
+describe("getSpotsInTile（v0.3 F-1-2）", () => {
+  it("z=14 は区画内のスポットを投稿数の多い順で返す（最大 TILE_MAX_SPOTS 件）", async () => {
+    const tile = lngLatToTile(KENROKUEN.lng, KENROKUEN.lat, 14);
+    const res = await getSpotsInTile(repo, tile);
+    expect(res.mode).toBe("spots");
+    if (res.mode !== "spots") throw new Error("unreachable");
+    expect(res.spots.length).toBeGreaterThan(0);
+    expect(res.spots.length).toBeLessThanOrEqual(TILE_MAX_SPOTS);
+    expect(res.spots.some((s) => s.id === KENROKUEN_ID)).toBe(true);
+    const bbox = tileToBbox(tile);
+    expect(res.spots.every((s) => pointInBbox(s, bbox))).toBe(true);
+    for (let i = 1; i < res.spots.length; i++) {
+      expect(res.spots[i - 1].postCount).toBeGreaterThanOrEqual(res.spots[i].postCount);
+    }
+  });
+
+  it("z=11 もスポット一覧。z=8 はヒートマップ用の点", async () => {
+    const mid = await getSpotsInTile(repo, lngLatToTile(KENROKUEN.lng, KENROKUEN.lat, 11));
+    expect(mid.mode).toBe("spots");
+    const heat = await getSpotsInTile(repo, lngLatToTile(KENROKUEN.lng, KENROKUEN.lat, 8));
+    expect(heat.mode).toBe("heatmap");
+    if (heat.mode !== "heatmap") throw new Error("unreachable");
+    expect(heat.points.length).toBeGreaterThan(0);
+    expect(heat.points.every((p) => p.weight > 0)).toBe(true);
+  });
+
+  it("category で絞り込める。何もない区画は空", async () => {
+    const tile = lngLatToTile(KENROKUEN.lng, KENROKUEN.lat, 11);
+    const res = await getSpotsInTile(repo, tile, { category: ["gourmet"] });
+    if (res.mode !== "spots") throw new Error("unreachable");
+    expect(res.spots.length).toBeGreaterThan(0);
+    expect(res.spots.every((s) => s.category === "gourmet")).toBe(true);
+    const tokyo = await getSpotsInTile(repo, lngLatToTile(139.7671, 35.6812, 14));
+    expect(tokyo).toEqual({ mode: "spots", spots: [] });
   });
 });
 
@@ -250,6 +290,35 @@ describe("Route Handlers", () => {
     const ok = await GET(get(`/spots?bbox=${KANAZAWA_BBOX}&zoom=5`), noParams);
     expect(ok.status).toBe(200);
     expect((await ok.json()).mode).toBe("heatmap");
+  });
+
+  it("GET /spots/tiles/{z}/{x}/{y} は z が 8/11/14 以外や範囲外なら 400、正しければ max-age=60 付きで返す", async () => {
+    const { GET } = await import("@/app/api/v1/spots/tiles/[z]/[x]/[y]/route");
+    const call = (z: string, x: string, y: string, query = "") =>
+      GET(get(`/spots/tiles/${z}/${x}/${y}${query}`), { params: Promise.resolve({ z, x, y }) });
+    const t = lngLatToTile(KENROKUEN.lng, KENROKUEN.lat, 14);
+    const ok = await call("14", String(t.x), String(t.y));
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get("Cache-Control")).toBe(`public, max-age=${TILE_CACHE_MAX_AGE_SEC}`);
+    const body = await ok.json();
+    expect(body.mode).toBe("spots");
+    expect(body.spots.some((s: { id: string }) => s.id === KENROKUEN_ID)).toBe(true);
+
+    const h = lngLatToTile(KENROKUEN.lng, KENROKUEN.lat, 8);
+    const heat = await call("8", String(h.x), String(h.y));
+    expect((await heat.json()).mode).toBe("heatmap");
+
+    const badZoom = await call("9", "0", "0");
+    expect(badZoom.status).toBe(400);
+    expect((await badZoom.json()).error.code).toBe("VALIDATION_ERROR");
+    const outOfRange = await call("8", "256", "0");
+    expect(outOfRange.status).toBe(400);
+    const notNumber = await call("14", "abc", "0");
+    expect(notNumber.status).toBe(400);
+    const badCategory = await call("14", String(t.x), String(t.y), "?category=foo");
+    expect(badCategory.status).toBe(400);
+    const filtered = await call("14", String(t.x), String(t.y), "?category=history,nature");
+    expect(filtered.status).toBe(200);
   });
 
   it("GET /spots/{spotId} と /spots/{spotId}/posts は ID が UUID でなければ 400、無ければ 404", async () => {

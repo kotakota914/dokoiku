@@ -13,6 +13,7 @@
 import { ApiError } from "@/lib/api/errors";
 import { serverConfig } from "@/lib/config";
 import type { PlaceCandidate } from "@/lib/domain/types";
+import { mockEnabled, mockReverseGeocode, mockSearchPlaces } from "./mock";
 import type { FetchLike } from "./notify";
 
 export const NOMINATIM_BASE_URL = "https://nominatim.openstreetmap.org";
@@ -50,6 +51,8 @@ export interface NominatimOptions {
   /** 現在地があれば近い順に並べ替える参考にする（Nominatim は viewbox 無しでは距離順にしないため、こちらで並べ替える） */
   near?: { lat: number; lng: number };
   timeoutMs?: number;
+  /** F-8-8：記録済みの結果（mock-data/external/nominatim.json）を返す。省略時は EXTERNAL_API_MOCK */
+  mock?: boolean;
 }
 
 // ---------- 1 秒 1 回の直列キュー ----------
@@ -157,6 +160,7 @@ function distance2(a: { lat: number; lng: number }, b: { lat: number; lng: numbe
 export async function searchPlaces(q: string, opts: NominatimOptions = {}): Promise<PlaceCandidate[]> {
   const query = q.trim();
   if (!query) return [];
+  if (mockEnabled(opts.mock)) return mockSearchPlaces(query);
   const limit = String(Math.min(50, Math.max(1, opts.limit ?? NOMINATIM_DEFAULT_LIMIT)));
   const data = await throttled(() =>
     getJson<NominatimPlace[]>(
@@ -180,6 +184,7 @@ export async function reverseGeocode(
   lng: number,
   opts: NominatimOptions = {},
 ): Promise<PlaceCandidate | null> {
+  if (mockEnabled(opts.mock)) return mockReverseGeocode(lat, lng);
   const data = await throttled(() =>
     getJson<NominatimPlace>(
       "/reverse",

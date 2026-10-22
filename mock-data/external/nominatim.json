@@ -1,0 +1,53 @@
+{
+  "_note": "F-8-8 の開発用モック（Nominatim）。search は検索語 → 候補、reverse は `lat,lng`（小数 3 桁）→ 候補",
+  "search": {
+    "金沢駅": [
+      {
+        "source": "external",
+        "id": "node:1000001",
+        "name": "金沢駅",
+        "lat": 36.578,
+        "lng": 136.6478,
+        "address": "金沢駅, 木ノ新保町, 金沢市, 石川県, 日本",
+        "prefecture": "石川県",
+        "city": "金沢市"
+      }
+    ],
+    "兼六園": [
+      {
+        "source": "external",
+        "id": "way:1000002",
+        "name": "兼六園",
+        "lat": 36.5619,
+        "lng": 136.6625,
+        "address": "兼六園, 兼六町, 金沢市, 石川県, 日本",
+        "prefecture": "石川県",
+        "city": "金沢市"
+      }
+    ],
+    "金沢港": [
+      {
+        "source": "external",
+        "id": "way:1000003",
+        "name": "金沢港",
+        "lat": 36.6106,
+        "lng": 136.6083,
+        "address": "金沢港, 金沢市, 石川県, 日本",
+        "prefecture": "石川県",
+        "city": "金沢市"
+      }
+    ]
+  },
+  "reverse": {
+    "36.578,136.648": {
+      "source": "external",
+      "id": "node:1000001",
+      "name": "金沢駅",
+      "lat": 36.578,
+      "lng": 136.6478,
+      "address": "金沢駅, 木ノ新保町, 金沢市, 石川県, 日本",
+      "prefecture": "石川県",
+      "city": "金沢市"
+    }
+  }
+}

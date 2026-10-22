@@ -83,6 +83,35 @@ describe("buildClusterIndex", () => {
     expect(cluster!.properties.coverThumbUrl).toBe("/t/y.webp");
   });
 
+  it("v0.3 F-1-9：選んだリストのスポットの数を束ごとに数える", () => {
+    const index = buildClusterIndex(
+      [
+        spot("x", 35, 135, 50, null),
+        spot("y", 35.0001, 135.0001, 2, "/t/y.webp"),
+        spot("z", 35.0002, 135, 1, null),
+      ],
+      new Set(["x", "z"]),
+    );
+    const items = getClusters(index, { minLng: 134, minLat: 34, maxLng: 136, maxLat: 36 }, 9);
+    const cluster = items.find(isClusterFeature)!;
+    expect(toClusterView(cluster).highlightCount).toBe(2);
+    const singles = getClusters(index, { minLng: 134, minLat: 34, maxLng: 136, maxLat: 36 }, 20).map(
+      toClusterView,
+    );
+    expect(
+      singles
+        .filter((v) => v.highlightCount === 1)
+        .map((v) => v.key)
+        .sort(),
+    ).toEqual(["s:x", "s:z"]);
+    // 指定しなければ 0
+    const plain = buildClusterIndex([spot("x", 35, 135, 50, null)]);
+    expect(
+      toClusterView(getClusters(plain, { minLng: 134, minLat: 34, maxLng: 136, maxLat: 36 }, 20)[0])
+        .highlightCount,
+    ).toBe(0);
+  });
+
   it("clusterMax より上のズームでは単独点になる", () => {
     const index = buildClusterIndex(spots);
     const items = getClusters(index, kyoto, MAP_ZOOM.clusterMax + 1);

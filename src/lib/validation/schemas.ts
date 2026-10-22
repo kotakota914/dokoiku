@@ -9,8 +9,11 @@ import {
   INTERESTS,
   LIMITS,
   PACES,
+  PLAN_METHODS,
+  PRIORITIES,
   REPORT_REASONS,
   STAY_DURATIONS,
+  TILE_ZOOMS,
   TRAVEL_MODES,
 } from "@/lib/domain/constants";
 
@@ -209,6 +212,20 @@ export const updateProfileSchema = z.object({
 export const listNameSchema = trimmed(LIMITS.listNameMin, LIMITS.listNameMax, "リスト名");
 export const createListSchema = z.object({ name: listNameSchema });
 export const renameListSchema = z.object({ name: listNameSchema });
+/** PATCH /lists/{listId}：名前と拠点（F-4-8）。拠点は label + location の両方、または null で解除 */
+export const listBaseSchema = z.object({
+  label: z.string().trim().min(1, "拠点の名前を入力してください").max(100, "拠点の名前は100文字以内で入力してください"),
+  location: z.object({ lat: latSchema, lng: lngSchema }),
+});
+export const updateListSchema = z
+  .object({
+    name: listNameSchema.optional(),
+    base: listBaseSchema.nullable().optional(),
+  })
+  .refine((v) => v.name !== undefined || v.base !== undefined, { message: "変更する項目がありません" });
+export type UpdateListInput = z.infer<typeof updateListSchema>;
+/** GET /lists/{listId} の並び順（F-4-9） */
+export const listItemsSortSchema = z.enum(["added", "distance", "popular"]).default("added");
 export const addListItemSchema = z.object({ spotId: uuidSchema });
 export const setMustVisitSchema = z.object({ mustVisit: z.boolean() });
 
@@ -236,6 +253,33 @@ export const planPlaceSchema = z.object({
   label: z.string().trim().max(100).default(""),
 });
 
+/** F-5-4 / F-5-5：条件。おまかせでは初期値のまま */
+export const planPreferencesSchema = z.object({
+  pace: z.enum(PACES).default("normal"),
+  interests: z.array(z.enum(INTERESTS)).max(INTERESTS.length).default([]),
+  priority: z.enum(PRIORITIES).default("fewer_moves"),
+  timeWindows: z
+    .array(
+      z
+        .object({ spotId: uuidSchema, from: timeHHMMSchema, to: timeHHMMSchema })
+        .refine((w) => w.from < w.to, { message: "時刻の範囲が正しくありません", path: ["to"] }),
+    )
+    .max(LIMITS.planSpotsMax)
+    .default([]),
+  orderHints: z
+    .array(
+      z.object({
+        spotId: uuidSchema,
+        position: z.enum(["first", "last", "before", "after"]),
+        relativeTo: uuidSchema.optional(),
+      }),
+    )
+    .max(LIMITS.planSpotsMax)
+    .default([]),
+  exclude: z.array(uuidSchema).max(LIMITS.planSpotsMax).default([]),
+});
+export type PlanPreferencesInput = z.infer<typeof planPreferencesSchema>;
+
 export const planComputeSchema = z
   .object({
     listId: uuidSchema,
@@ -248,10 +292,17 @@ export const planComputeSchema = z
     date: dateYMDSchema,
     startTime: timeHHMMSchema,
     endTime: timeHHMMSchema,
-    mode: z.enum(TRAVEL_MODES),
-    pace: z.enum(PACES).default("normal"),
-    interests: z.array(z.enum(INTERESTS)).default([]),
+    mode: z.enum(TRAVEL_MODES).default("transit"),
     lunchBreak: z.boolean().default(false),
+    method: z.enum(PLAN_METHODS).default("auto"),
+    preferences: planPreferencesSchema.default({
+      pace: "normal",
+      interests: [],
+      priority: "fewer_moves",
+      timeWindows: [],
+      orderHints: [],
+      exclude: [],
+    }),
   })
   .refine((v) => v.startTime < v.endTime, {
     message: "終了時刻は開始時刻より後にしてください",
@@ -259,12 +310,41 @@ export const planComputeSchema = z
   });
 export type PlanComputeInput = z.infer<typeof planComputeSchema>;
 
+/** POST /plans/chat：AIと相談（F-5-5）。会話は最大 chatMaxTurns 往復 */
+export const planChatMessageSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string().trim().min(1).max(1000, "メッセージは1000文字以内で入力してください"),
+});
+export const planChatSchema = z.object({
+  listId: uuidSchema,
+  spotIds: z.array(uuidSchema).min(1).max(LIMITS.planSpotsMax),
+  date: dateYMDSchema,
+  startTime: timeHHMMSchema,
+  endTime: timeHHMMSchema,
+  mode: z.enum(TRAVEL_MODES).default("transit"),
+  messages: z
+    .array(planChatMessageSchema)
+    .min(1, "メッセージを入力してください")
+    .max(LIMITS.chatMaxTurns * 2, `会話は${LIMITS.chatMaxTurns}往復までです`),
+  /** これまでに読み取った条件（続きの会話で上書きしていく） */
+  conditions: planPreferencesSchema.optional(),
+});
+export type PlanChatInput = z.infer<typeof planChatSchema>;
+
 /** 並び替え・滞在時間変更後の再計算。外部 API は呼ばない */
 export const planRecomputeSchema = z.object({
   params: planComputeSchema,
   travelMatrixId: z.string().min(1).max(200),
   order: z.array(uuidSchema).min(1).max(LIMITS.planSpotsMax),
   stayOverrides: z.record(uuidSchema, z.number().int().min(5).max(600)).default({}),
+  /** 調整する元の候補（id / kind / label を引き継ぐ）。省略時は c1 / fewest_moves /「調整した案」 */
+  candidate: z
+    .object({
+      id: z.string().min(1).max(100),
+      kind: z.enum(["fewest_moves", "most_spots", "best_time", "least_walking"]),
+      label: z.string().trim().min(1).max(100),
+    })
+    .optional(),
 });
 export type PlanRecomputeInput = z.infer<typeof planRecomputeSchema>;
 
@@ -276,6 +356,18 @@ const planTravelMinSchema = z
   .min(0)
   .max(24 * 60)
   .nullable();
+export const planLegSchema = z
+  .object({
+    mode: z.enum(TRAVEL_MODES),
+    travelMin: z
+      .number()
+      .int()
+      .min(0)
+      .max(24 * 60),
+    estimated: z.boolean().default(false),
+    walkM: z.number().int().min(0).max(200_000).nullable().default(null),
+  })
+  .nullable();
 export const planItemSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("spot"),
@@ -284,6 +376,7 @@ export const planItemSchema = z.discriminatedUnion("type", [
     stayMin: planStayMinSchema,
     depart: timeHHMMSchema,
     travelMinToNext: planTravelMinSchema,
+    next: planLegSchema.default(null),
     inBestTime: z.boolean(),
   }),
   z.object({
@@ -292,32 +385,75 @@ export const planItemSchema = z.discriminatedUnion("type", [
     stayMin: planStayMinSchema,
     depart: timeHHMMSchema,
     travelMinToNext: planTravelMinSchema,
+    next: planLegSchema.default(null),
   }),
 ]);
-export const skipReasonSchema = z.enum(["time_limit", "no_route", "deleted", "opening_hours"]);
+export const skipReasonSchema = z.enum(["time_limit", "no_route", "deleted", "opening_hours", "excluded"]);
+export const candidateKindSchema = z.enum(["fewest_moves", "most_spots", "best_time", "least_walking"]);
+export const planStatsSchema = z.object({
+  spotCount: z.number().int().min(0).max(LIMITS.planSpotsMax),
+  totalTravelMin: z
+    .number()
+    .min(0)
+    .max(24 * 60),
+  walkM: z.number().min(0).max(1_000_000),
+  endAt: timeHHMMSchema,
+  bestTimeHits: z.number().int().min(0).max(LIMITS.planSpotsMax),
+});
 /** 経路線（GeoJSON LineString、[lng, lat]）。保存容量を抑えるため座標は最大 5000 点 */
 export const routeGeometrySchema = z.object({
   type: z.literal("LineString"),
   coordinates: z.array(z.tuple([lngSchema, latSchema])).max(5000, "経路線の座標が多すぎます"),
 });
 
+/** 保存する1案（PlanResult と同じ形） */
+export const planResultSchema = z.object({
+  id: z.string().min(1).max(100),
+  kind: candidateKindSchema,
+  label: z.string().trim().min(1).max(100),
+  reason: z.string().trim().max(500).default(""),
+  /** スポット最大 LIMITS.planSpotsMax 件＋昼食 1 件。spotId が params.spotIds に含まれるかは service で確認する */
+  items: z.array(planItemSchema).max(LIMITS.planSpotsMax + 1, "プランの項目が多すぎます"),
+  skipped: z.array(z.object({ spotId: uuidSchema, reason: skipReasonSchema })).max(LIMITS.planSpotsMax),
+  notes: z.array(z.string().trim().max(200)).max(10).default([]),
+  stats: planStatsSchema,
+  totalTravelMin: z
+    .number()
+    .min(0)
+    .max(24 * 60),
+  endAt: timeHHMMSchema,
+  geometry: routeGeometrySchema.nullable(),
+  travelMatrixId: z.string().min(1).max(200),
+  estimated: z.boolean().default(false),
+});
 export const planSaveSchema = z.object({
   params: planComputeSchema,
-  result: z.object({
-    /** スポット最大 LIMITS.planSpotsMax 件＋昼食 1 件。spotId が params.spotIds に含まれるかは service で確認する */
-    items: z.array(planItemSchema).max(LIMITS.planSpotsMax + 1, "プランの項目が多すぎます"),
-    skipped: z.array(z.object({ spotId: uuidSchema, reason: skipReasonSchema })).max(LIMITS.planSpotsMax),
-    totalTravelMin: z
-      .number()
-      .min(0)
-      .max(24 * 60),
-    endAt: timeHHMMSchema,
-    geometry: routeGeometrySchema.nullable(),
-    travelMatrixId: z.string().min(1).max(200),
-    estimated: z.boolean().default(false),
-  }),
+  result: planResultSchema,
 });
 export type PlanSaveInput = z.infer<typeof planSaveSchema>;
+
+// ---------- 地図タイル（F-1-2 / 9.3 GET /spots/tiles/{z}/{x}/{y}） ----------
+/** z は TILE_ZOOMS（8 / 11 / 14）のいずれか。x, y は Web メルカトルのタイル番号（0 〜 2^z − 1） */
+export const tilePathSchema = z
+  .object({
+    z: z.coerce
+      .number()
+      .int()
+      .refine((v) => (TILE_ZOOMS as readonly number[]).includes(v), {
+        message: `z は ${TILE_ZOOMS.join(", ")} のいずれかを指定してください`,
+      }),
+    x: z.coerce.number().int().min(0),
+    y: z.coerce.number().int().min(0),
+  })
+  .refine((v) => v.x < 2 ** v.z && v.y < 2 ** v.z, { message: "タイル番号が範囲外です" });
+export type TilePathInput = z.infer<typeof tilePathSchema>;
+export const tileQuerySchema = z.object({
+  category: z
+    .string()
+    .optional()
+    .transform((s) => (s ? s.split(",").map((v) => v.trim()).filter(Boolean) : undefined))
+    .pipe(z.array(categorySchema).max(CATEGORIES.length).optional()),
+});
 
 // ---------- 管理 ----------
 export const adminPostPatchSchema = z.object({ status: z.enum(["public", "hidden"]) });

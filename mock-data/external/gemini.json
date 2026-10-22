@@ -1,0 +1,12 @@
+{
+  "reply": "午前はゆっくりめにして、移動を少なくする案で作ります。ほかに希望はありますか。",
+  "conditions": {
+    "pace": "relaxed",
+    "interests": ["history"],
+    "priority": "fewer_moves",
+    "timeWindows": [],
+    "orderHints": [],
+    "exclude": []
+  },
+  "unclear": false
+}

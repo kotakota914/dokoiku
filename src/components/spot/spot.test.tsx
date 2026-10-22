@@ -10,6 +10,8 @@ import { ToastProvider } from "@/components/ui/Toast";
 import { HourHistogram, peakHour } from "./HourHistogram";
 import { LikeButton } from "./LikeButton";
 import { PostCard } from "./PostCard";
+import { SpotActions } from "./SpotActions";
+import { SystemStatusProvider } from "@/components/system/SystemStatusProvider";
 
 const push = vi.fn();
 vi.mock("next/navigation", () => ({
@@ -170,7 +172,8 @@ describe("PostCard", () => {
     );
     expect(report).toBeDefined();
     click(report!);
-    expect(container.querySelector('[role="dialog"]')?.textContent).toContain("この投稿を通報");
+    // ダイアログは document.body へポータルで描画される
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("この投稿を通報");
   });
 
   it("非表示の投稿にはバッジを出し、showSpotName でスポットへのリンクを出す", () => {
@@ -179,5 +182,36 @@ describe("PostCard", () => {
     );
     expect(container.textContent).toContain("非表示");
     expect(container.querySelector('a[href="/spots/spot-1"]')?.textContent).toContain("兼六園");
+  });
+});
+
+describe("SpotActions（v0.3 F-3-5）", () => {
+  it("外部の地図アプリへのリンクを置かない。リスト追加と投稿は残る", () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ suspended: [], capabilities: {} }), { status: 200 }),
+    );
+    const container = mount(
+      <SystemStatusProvider
+        initialStatus={{
+          suspended: [],
+          capabilities: {
+            externalSearch: false,
+            routing: false,
+            transit: false,
+            ai: false,
+            googleLogin: false,
+            backend: "memory",
+          },
+        }}
+      >
+        <SpotActions spotId="b0000000-0000-4000-8000-000000000001" currentUserId={null} />
+      </SystemStatusProvider>,
+    );
+    expect(container.textContent).not.toContain("Googleマップ");
+    expect(container.querySelector('a[target="_blank"]')).toBeNull();
+    expect(container.querySelector('a[href*="google"]')).toBeNull();
+    expect(container.querySelector(".lucide-external-link")).toBeNull();
+    expect(container.textContent).toContain("行きたい場所リストに追加");
+    expect(container.textContent).toContain("このスポットに投稿");
   });
 });

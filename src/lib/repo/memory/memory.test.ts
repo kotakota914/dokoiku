@@ -3,7 +3,8 @@ import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { LIMITS, STAY_DURATION_MINUTES } from "@/lib/domain/constants";
+import { LIMITS, STAY_DURATION_MINUTES, TRAVEL_CACHE_DAYS } from "@/lib/domain/constants";
+import { rankPopularity } from "@/lib/domain/popularity";
 import { haversineM, normalizeName } from "@/lib/utils/geo";
 import { jstHour } from "@/lib/utils/time";
 import { buildSeedData, createMemoryRepository, SEED_USER_IDS, type MemoryRepository } from "./index";
@@ -395,11 +396,22 @@ describe("wishlists と plans", () => {
         startTime: "09:00",
         endTime: "18:00",
         mode: "walking",
-        pace: "normal",
-        interests: [],
         lunchBreak: false,
+        method: "preferences",
+        preferences: {
+          pace: "normal",
+          interests: [],
+          priority: "fewer_moves",
+          timeWindows: [],
+          orderHints: [],
+          exclude: [],
+        },
       },
       result: {
+        id: "c1",
+        kind: "fewest_moves",
+        label: "移動が最も少ない案",
+        reason: "",
         items: [
           {
             type: "spot",
@@ -408,6 +420,7 @@ describe("wishlists と plans", () => {
             stayMin: 60,
             depart: "10:30",
             travelMinToNext: 20,
+            next: { mode: "walking", travelMin: 20, estimated: true, walkM: 1500 },
             inBestTime: true,
           },
           {
@@ -417,10 +430,13 @@ describe("wishlists と plans", () => {
             stayMin: 60,
             depart: "11:50",
             travelMinToNext: null,
+            next: null,
             inBestTime: false,
           },
         ],
         skipped: [],
+        notes: [],
+        stats: { spotCount: 2, totalTravelMin: 50, walkM: 1500, endAt: "11:50", bestTimeHits: 1 },
         totalTravelMin: 50,
         endAt: "11:50",
         geometry: null,
@@ -429,12 +445,36 @@ describe("wishlists と plans", () => {
       },
     });
     expect(plan.spotCount).toBe(2);
+    expect(plan.method).toBe("preferences");
+    expect((await repo.plans.getById(plan.id))?.result.items[0].next?.travelMin).toBe(20);
 
     const detail = (await repo.wishlists.getById(list.id))!;
     expect(detail.itemCount).toBe(2);
     expect(detail.items.map((i) => i.spot?.name)).toEqual([s1.name, s2.name]);
     expect(detail.items[1].mustVisit).toBe(true);
     expect(detail.plans.map((p) => p.id)).toEqual([plan.id]);
+    expect(detail.plans[0].method).toBe("preferences");
+    expect(detail.baseLabel).toBeNull();
+    expect(detail.baseLocation).toBeNull();
+
+    // 拠点（F-4-8）：設定すると listByUser / getById に出て、null で解除できる
+    const withBase = await repo.wishlists.setBase(list.id, {
+      label: "金沢駅",
+      location: { lat: 36.578, lng: 136.6478 },
+    });
+    expect(withBase.baseLabel).toBe("金沢駅");
+    expect(withBase.baseLocation).toEqual({ lat: 36.578, lng: 136.6478 });
+    expect((await repo.wishlists.getById(list.id))?.baseLabel).toBe("金沢駅");
+    expect(
+      (await repo.wishlists.listByUser(SEED_USER_IDS.userA)).find((w) => w.id === list.id)?.baseLocation,
+    ).toEqual({
+      lat: 36.578,
+      lng: 136.6478,
+    });
+    const cleared = await repo.wishlists.setBase(list.id, null);
+    expect(cleared.baseLabel).toBeNull();
+    expect(cleared.baseLocation).toBeNull();
+    await expect(repo.wishlists.setBase("missing", null)).rejects.toThrow();
 
     // 共有トークン
     await repo.wishlists.setShareToken(list.id, "token-abc");
@@ -548,8 +588,8 @@ describe("travelCache", () => {
   it("getMany は期限内のものだけ返し、purgeExpired で消える", async () => {
     const repo = createMemoryRepository(false, { persist: false });
     await repo.travelCache.putMany([
-      { fromKey: "s:a", toKey: "s:b", mode: "walking", durationSec: 600, distanceM: 800 },
-      { fromKey: "s:b", toKey: "s:a", mode: "walking", durationSec: 620, distanceM: 800 },
+      { fromKey: "s:a", toKey: "s:b", mode: "walking", timeBucket: "any", durationSec: 600, distanceM: 800 },
+      { fromKey: "s:b", toKey: "s:a", mode: "walking", timeBucket: "any", durationSec: 620, distanceM: 800 },
     ]);
     const pairs = [
       { fromKey: "s:a", toKey: "s:b" },
@@ -559,12 +599,123 @@ describe("travelCache", () => {
     const fresh = await repo.travelCache.getMany(pairs, "walking");
     expect([...fresh.keys()].sort()).toEqual(["s:a|s:b", "s:b|s:a"]);
     expect(fresh.get("s:a|s:b")?.durationSec).toBe(600);
+    expect(fresh.get("s:a|s:b")?.timeBucket).toBe("any");
     expect((await repo.travelCache.getMany(pairs, "driving")).size).toBe(0);
 
     const later = new Date(Date.now() + (LIMITS.travelCacheDays + 1) * 86_400_000);
-    expect((await repo.travelCache.getMany(pairs, "walking", later)).size).toBe(0);
+    expect((await repo.travelCache.getMany(pairs, "walking", "any", later)).size).toBe(0);
     expect(await repo.travelCache.purgeExpired(LIMITS.travelCacheDays, later)).toBe(2);
     expect((await repo.travelCache.getMany(pairs, "walking")).size).toBe(0);
+  });
+
+  it("公共交通は timeBucket ごとに保存し、7 日で期限切れになる（徒歩・車は 30 日）", async () => {
+    const repo = createMemoryRepository(false, { persist: false });
+    await repo.travelCache.putMany([
+      {
+        fromKey: "s:a",
+        toKey: "s:b",
+        mode: "transit",
+        timeBucket: "weekday-09",
+        durationSec: 900,
+        distanceM: 3000,
+      },
+      {
+        fromKey: "s:a",
+        toKey: "s:b",
+        mode: "transit",
+        timeBucket: "holiday-09",
+        durationSec: 1200,
+        distanceM: 3000,
+      },
+      { fromKey: "s:a", toKey: "s:b", mode: "driving", timeBucket: "any", durationSec: 400, distanceM: 3000 },
+    ]);
+    const pairs = [{ fromKey: "s:a", toKey: "s:b" }];
+    expect((await repo.travelCache.getMany(pairs, "transit", "weekday-09")).get("s:a|s:b")?.durationSec).toBe(
+      900,
+    );
+    expect((await repo.travelCache.getMany(pairs, "transit", "holiday-09")).get("s:a|s:b")?.durationSec).toBe(
+      1200,
+    );
+    // 区分を省略すると "any" なので公共交通は見つからない
+    expect((await repo.travelCache.getMany(pairs, "transit")).size).toBe(0);
+    expect((await repo.travelCache.getMany(pairs, "driving")).size).toBe(1);
+
+    const after8Days = new Date(Date.now() + (TRAVEL_CACHE_DAYS.transit + 1) * 86_400_000);
+    expect((await repo.travelCache.getMany(pairs, "transit", "weekday-09", after8Days)).size).toBe(0);
+    expect((await repo.travelCache.getMany(pairs, "driving", "any", after8Days)).size).toBe(1);
+    // olderThanDays を省略すると mode ごとの期限で消える
+    expect(await repo.travelCache.purgeExpired(undefined, after8Days)).toBe(2);
+    expect((await repo.travelCache.getMany(pairs, "driving")).size).toBe(1);
+  });
+});
+
+describe("人気度（F-1-5）", () => {
+  it("seed の人気度は市区町村内の相対順位で決まり、件数しきい値ではない", async () => {
+    const repo = repoWithSeed();
+    const spots = await repo.spots.inBbox({ bbox: KANAZAWA_BBOX, limit: 1000 });
+    const expected = rankPopularity(spots);
+    for (const s of spots) expect(s.popularity).toBe(expected.get(s.id));
+    // 投稿数が最多のスポット（兼六園）は大人気、投稿 1 件のスポットは通常
+    const top = [...spots].sort((a, b) => b.postCount - a.postCount)[0];
+    expect(top.popularity).toBe("very_popular");
+    expect(spots.filter((s) => s.postCount < 2).every((s) => s.popularity === "normal")).toBe(true);
+    expect(spots.some((s) => s.popularity === "popular")).toBe(true);
+    // 都道府県（石川県）の中には通常のスポットもある
+    expect(spots.some((s) => s.popularity === "normal" && s.postCount >= 5)).toBe(true);
+  });
+
+  it("recomputePopularity は変わった件数を返し、投稿の作成・削除で即時に更新される", async () => {
+    const repo = createMemoryRepository(false, { persist: false });
+    await repo.profiles.create({ id: SEED_USER_IDS.userA, displayName: "A" });
+    const made: string[] = [];
+    // 同じ市区町村に 10 スポット（投稿 0 件）
+    for (let i = 0; i < 10; i += 1) {
+      const s = await repo.spots.create({
+        name: `スポット${i}`,
+        lat: 36.5 + i * 0.001,
+        lng: 136.6,
+        category: "other",
+        source: "gps",
+        prefecture: "石川県",
+        city: "金沢市",
+        createdBy: SEED_USER_IDS.userA,
+      });
+      made.push(s.id);
+    }
+    expect(await repo.spots.recomputePopularity({ prefecture: "石川県", city: "金沢市" })).toBe(0);
+
+    // 投稿数：スポット0 に 3 件、スポット1 に 2 件、残りに 1 件ずつ
+    const post = async (spotId: string, n: number) => {
+      for (let k = 0; k < n; k += 1) {
+        await repo.posts.create({
+          userId: SEED_USER_IDS.userA,
+          spotId,
+          comment: `投稿${k}`,
+          category: "other",
+          stayDuration: null,
+          images: [IMG(k)],
+        });
+      }
+    };
+    await post(made[0], 3);
+    await post(made[1], 2);
+    for (const id of made.slice(2)) await post(id, 1);
+    const summaries = await repo.spots.getManyByIds(made);
+    // 10 件：上位 1 件が大人気、上位 3 件までが人気。投稿 1 件は通常
+    expect(summaries[0].popularity).toBe("very_popular");
+    expect(summaries[1].popularity).toBe("popular");
+    expect(summaries.slice(2).every((s) => s.popularity === "normal")).toBe(true);
+
+    // スポット0 の投稿を全部消すと順位が入れ替わる
+    const posts0 = await repo.posts.listBySpot(made[0], { limit: 10 });
+    for (const p of posts0.items) await repo.posts.delete(p.id);
+    const after = await repo.spots.getManyByIds(made);
+    expect(after[0].popularity).toBe("normal");
+    expect(after[1].popularity).toBe("very_popular");
+
+    // 何も変わらなければ 0、別の都道府県を指定しても対象外なので 0
+    expect(await repo.spots.recomputePopularity()).toBe(0);
+    expect(await repo.spots.recomputePopularity({ prefecture: "京都府" })).toBe(0);
   });
 });
 
@@ -728,5 +879,129 @@ describe("永続化", () => {
     );
     const noPersist = createMemoryRepository(true, { persist: false, dataDir });
     expect(await noPersist.wishlists.getById(list.id)).toBeNull();
+  });
+
+  it("v0.3 より前の memory.json（拠点・timeBucket・候補の項目が無い）も既定値を補って読める", async () => {
+    const dataDir = await mkTmp();
+    const data = buildSeedData();
+    const spotA = data.spots[0];
+    const spotB = data.spots[1];
+    const oldSnapshot = {
+      version: 1,
+      savedAt: "2026-10-01T00:00:00.000+09:00",
+      profiles: data.profiles,
+      spots: data.spots,
+      posts: data.posts,
+      images: data.images,
+      likes: data.likes,
+      wishlists: [
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          userId: SEED_USER_IDS.userA,
+          name: "古いリスト",
+          shareToken: null,
+          createdAt: "2026-10-01T00:00:00.000+09:00",
+        },
+      ],
+      wishlistItems: [],
+      plans: [
+        {
+          id: "22222222-2222-4222-8222-222222222222",
+          wishlistId: "11111111-1111-4111-8111-111111111111",
+          userId: SEED_USER_IDS.userA,
+          date: "2026-11-03",
+          spotCount: 2,
+          totalTravelMin: 20,
+          createdAt: "2026-10-01T00:00:00.000+09:00",
+          params: {
+            listId: "11111111-1111-4111-8111-111111111111",
+            spotIds: [spotA.id, spotB.id],
+            origin: { lat: 36.578, lng: 136.6478, label: "金沢駅" },
+            destination: null,
+            date: "2026-11-03",
+            startTime: "09:00",
+            endTime: "18:00",
+            mode: "walking",
+            pace: "normal",
+            interests: [],
+            lunchBreak: false,
+          },
+          result: {
+            items: [
+              {
+                type: "spot",
+                spotId: spotA.id,
+                arrive: "09:30",
+                stayMin: 60,
+                depart: "10:30",
+                travelMinToNext: 20,
+                inBestTime: true,
+              },
+              {
+                type: "spot",
+                spotId: spotB.id,
+                arrive: "10:50",
+                stayMin: 60,
+                depart: "11:50",
+                travelMinToNext: null,
+                inBestTime: false,
+              },
+            ],
+            skipped: [],
+            totalTravelMin: 20,
+            endAt: "11:50",
+            geometry: null,
+            travelMatrixId: "tm_old",
+            estimated: true,
+          },
+        },
+      ],
+      travelCache: [
+        {
+          fromKey: "s:a",
+          toKey: "s:b",
+          mode: "walking",
+          durationSec: 600,
+          distanceM: 800,
+          fetchedAt: new Date().toISOString(),
+        },
+      ],
+      apiUsage: [],
+      reports: [],
+    };
+    await fsp.mkdir(dataDir, { recursive: true });
+    await fsp.writeFile(path.join(dataDir, "memory.json"), JSON.stringify(oldSnapshot), "utf8");
+
+    const repo = createMemoryRepository(true, { persist: true, dataDir });
+    const list = (await repo.wishlists.getById("11111111-1111-4111-8111-111111111111"))!;
+    expect(list.baseLabel).toBeNull();
+    expect(list.baseLocation).toBeNull();
+    expect(list.plans[0].method).toBe("auto");
+    const plan = (await repo.plans.getById("22222222-2222-4222-8222-222222222222"))!;
+    expect(plan.method).toBe("auto");
+    expect(plan.params.method).toBe("auto");
+    expect(plan.params.preferences.pace).toBe("normal");
+    expect(plan.result.id).toBe("c1");
+    expect(plan.result.kind).toBe("fewest_moves");
+    expect(plan.result.notes).toEqual([]);
+    expect(plan.result.stats).toEqual({
+      spotCount: 2,
+      totalTravelMin: 20,
+      walkM: 0,
+      endAt: "11:50",
+      bestTimeHits: 1,
+    });
+    expect(plan.result.items[0].next).toEqual({
+      mode: "walking",
+      travelMin: 20,
+      estimated: true,
+      walkM: null,
+    });
+    expect(plan.result.items[1].next).toBeNull();
+    const cached = await repo.travelCache.getMany([{ fromKey: "s:a", toKey: "s:b" }], "walking");
+    expect(cached.get("s:a|s:b")?.timeBucket).toBe("any");
+    // 人気度は保存されていなかったので読み込み時に全件計算される
+    const spots = await repo.spots.inBbox({ bbox: KANAZAWA_BBOX, limit: 1000 });
+    expect(spots.some((s) => s.popularity === "very_popular")).toBe(true);
   });
 });

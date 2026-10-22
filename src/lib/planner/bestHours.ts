@@ -33,3 +33,29 @@ export function isInBestTime(arriveMin: number, bestHours: ReadonlySet<number> |
   const hour = Math.floor(((arriveMin % 1440) + 1440) / 60) % 24;
   return bestHours.has(hour);
 }
+
+/**
+ * 11.3 の「おすすめ時間帯からずれた時間（分）」：到着時刻から最も近いおすすめの時間帯までの分。
+ * 時間帯の中に到着すれば 0。bestHours が null（指定なし）なら 0（ずれを数えない）。
+ */
+export function bestTimeDeviation(arriveMin: number, bestHours: ReadonlySet<number> | null): number {
+  if (!bestHours || bestHours.size === 0) return 0;
+  const t = ((arriveMin % 1440) + 1440) % 1440;
+  let best = Number.POSITIVE_INFINITY;
+  for (const h of bestHours) {
+    const from = h * 60;
+    const to = from + 60;
+    const d = t < from ? from - t : t >= to ? t - to + 1 : 0;
+    if (d < best) best = d;
+  }
+  return best === Number.POSITIVE_INFINITY ? 0 : best;
+}
+
+/**
+ * AIと相談の「時刻の指定」（from〜to に到着）からのずれ（分）。範囲内なら 0。
+ */
+export function timeWindowDeviation(arriveMin: number, window: { fromMin: number; toMin: number }): number {
+  if (arriveMin < window.fromMin) return window.fromMin - arriveMin;
+  if (arriveMin > window.toMin) return arriveMin - window.toMin;
+  return 0;
+}

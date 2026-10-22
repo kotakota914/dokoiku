@@ -10,6 +10,7 @@ import { LIMITS } from "@/lib/domain/constants";
 import type { SharedWishlist, Wishlist, WishlistDetail } from "@/lib/domain/types";
 import type { Repository } from "@/lib/repo/types";
 import { newShareToken } from "@/lib/utils/id";
+import type { UpdateListInput } from "@/lib/validation/schemas";
 
 export const LIST_NOT_FOUND_MESSAGE = "リストが見つかりませんでした";
 export const LISTS_LIMIT_MESSAGE = `リストは${LIMITS.listsPerUser}件までです`;
@@ -59,7 +60,7 @@ export async function createWishlist(
   return repo.wishlists.create({ userId, name: input.name });
 }
 
-/** PATCH /lists/{listId}（F-4-1） */
+/** PATCH /lists/{listId}（F-4-1）：名前だけを変える（updateWishlist の互換ラッパー） */
 export async function renameWishlist(
   repo: ListsDeps,
   userId: string,
@@ -68,6 +69,37 @@ export async function renameWishlist(
 ): Promise<Wishlist> {
   await getOwnedWishlist(repo, userId, listId);
   return repo.wishlists.rename(listId, input.name);
+}
+
+/** WishlistDetail から items / plans を落として Wishlist にする */
+function toWishlist(detail: WishlistDetail): Wishlist {
+  const { items, plans, ...list } = detail;
+  void items;
+  void plans;
+  return list;
+}
+
+/**
+ * PATCH /lists/{listId}（v0.3 F-4-1 / F-4-8）：名前と拠点の変更。
+ * name があれば名前変更、base があれば拠点の設定（null で解除）。両方あれば順に適用する。
+ * 拠点は名前と座標を保存するだけで、外部 API は呼ばない（F-4-8 受け入れ基準）。
+ */
+export async function updateWishlist(
+  repo: ListsDeps,
+  userId: string,
+  listId: string,
+  input: UpdateListInput,
+): Promise<Wishlist> {
+  const current = await getOwnedWishlist(repo, userId, listId);
+  let updated = toWishlist(current);
+  if (input.name !== undefined) updated = await repo.wishlists.rename(listId, input.name);
+  if (input.base !== undefined) {
+    updated = await repo.wishlists.setBase(
+      listId,
+      input.base ? { label: input.base.label, location: input.base.location } : null,
+    );
+  }
+  return updated;
 }
 
 /** DELETE /lists/{listId}（F-4-1）：リストに属するプランも Repository 側で消える */

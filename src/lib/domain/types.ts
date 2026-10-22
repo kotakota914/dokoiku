@@ -4,11 +4,14 @@
  * - 日時は ISO 8601 文字列（+09:00 付き）、座標は lat / lng（WGS84）。
  */
 import type {
+  CandidateKind,
   Category,
   Feature,
   Interest,
   Pace,
+  PlanMethod,
   Popularity,
+  Priority,
   ReportReason,
   StayDuration,
   TravelMode,
@@ -27,7 +30,7 @@ export interface Profile {
 }
 
 // ---------- スポット ----------
-export type SpotSource = "gps" | "search_db" | "search_external";
+export type SpotSource = "gps" | "search_db" | "search_external" | "seed";
 
 export interface Spot {
   id: UUID;
@@ -90,6 +93,8 @@ export interface HeatPoint {
 
 export type SpotsInViewResponse =
   { mode: "spots"; spots: SpotSummary[] } | { mode: "heatmap"; points: HeatPoint[] };
+
+/** v0.3 GET /spots/tiles/{z}/{x}/{y} も同じ形（z=8 はヒートマップ、それ以外はスポット）。区画→bbox 変換は src/lib/map/tiles.ts */
 
 export interface NearbySpot extends SpotSummary {
   distanceM: number;
@@ -172,6 +177,9 @@ export interface Wishlist {
   id: UUID;
   userId: UUID;
   name: string;
+  /** v0.3 F-4-8：拠点（ホテル・駅など）。1リストに1つ */
+  baseLabel: string | null;
+  baseLocation: LatLng | null;
   shareToken: string | null;
   createdAt: ISODateTime;
   itemCount: number;
@@ -206,8 +214,22 @@ export interface PlanPlace extends LatLng {
   label: string;
 }
 
+/** v0.3 F-5-4 / F-5-5：経路作成の条件（「AIと相談」の conditions も同じ形） */
+export interface PlanPreferences {
+  pace: Pace;
+  interests: Interest[];
+  priority: Priority;
+  /** AIと相談：スポットごとの時刻の指定（例：金沢港は 16:00〜17:30 に到着） */
+  timeWindows: { spotId: UUID; from: string; to: string }[];
+  /** AIと相談：行く順番の希望 */
+  orderHints: { spotId: UUID; position: "first" | "last" | "before" | "after"; relativeTo?: UUID }[];
+  /** AIと相談：除外するスポット */
+  exclude: UUID[];
+}
+
 export interface PlanParams {
   listId: UUID;
+  /** 1〜8 件（F-5-1） */
   spotIds: UUID[];
   origin: PlanPlace;
   destination: PlanPlace | null;
@@ -217,9 +239,19 @@ export interface PlanParams {
   startTime: string;
   endTime: string;
   mode: TravelMode;
-  pace: Pace;
-  interests: Interest[];
   lunchBreak: boolean;
+  method: PlanMethod;
+  preferences: PlanPreferences;
+}
+
+/** 次の地点への移動（最後の項目は null） */
+export interface PlanLeg {
+  mode: TravelMode;
+  travelMin: number;
+  /** 直線距離からの概算なら true（公共交通は常に「目安」） */
+  estimated: boolean;
+  /** 徒歩の距離（m）。公共交通の徒歩部分を含む。不明なら null */
+  walkM: number | null;
 }
 
 export type PlanItem =
@@ -229,22 +261,63 @@ export type PlanItem =
       arrive: string;
       stayMin: number;
       depart: string;
+      /** @deprecated next.travelMin を使う。互換のため残す */
       travelMinToNext: number | null;
+      next: PlanLeg | null;
       inBestTime: boolean;
     }
-  | { type: "lunch"; arrive: string; stayMin: number; depart: string; travelMinToNext: number | null };
+  | {
+      type: "lunch";
+      arrive: string;
+      stayMin: number;
+      depart: string;
+      travelMinToNext: number | null;
+      next: PlanLeg | null;
+    };
 
-export type SkipReason = "time_limit" | "no_route" | "deleted" | "opening_hours";
+export type SkipReason = "time_limit" | "no_route" | "deleted" | "opening_hours" | "excluded";
 
-export interface PlanResult {
+export interface PlanStats {
+  spotCount: number;
+  totalTravelMin: number;
+  /** 歩く距離（m） */
+  walkM: number;
+  endAt: string;
+  /** おすすめの時間帯に合った場所の数 */
+  bestTimeHits: number;
+}
+
+/** 経路案（1回の作成で最大3案。F-5-6） */
+export interface PlanCandidate {
+  id: string;
+  kind: CandidateKind;
+  label: string;
+  /** なぜその案なのか（点数の内訳から作る） */
+  reason: string;
   items: PlanItem[];
   skipped: { spotId: UUID; reason: SkipReason }[];
-  totalTravelMin: number;
-  /** 最後の地点を出発する時刻、または到着地に着く時刻 */
-  endAt: string;
+  /** 注意書き（例：「一部の区間は徒歩で計算しています」） */
+  notes: string[];
+  stats: PlanStats;
+  /** 訪問順にスポットを結んだ線（実際の道の形ではない。ADR-0016） */
   geometry: { type: "LineString"; coordinates: [number, number][] } | null;
+}
+
+/** POST /plans/compute のレスポンス */
+export interface PlanComputeResponse {
+  candidates: PlanCandidate[];
   travelMatrixId: string;
-  /** 外部 API が使えず直線距離で概算したとき true */
+  /** 全候補に共通の入らなかった場所（候補 0 件のときもどれが入らなかったかを返す）。各候補の skipped と同じ */
+  skipped?: PlanCandidate["skipped"];
+}
+
+/** 保存する・再計算する1案。候補の内容＋行列ID */
+export interface PlanResult extends PlanCandidate {
+  totalTravelMin: number;
+  /** 最後の地点を出発する時刻、または到着地に着く時刻（stats.endAt と同じ） */
+  endAt: string;
+  travelMatrixId: string;
+  /** 一部でも概算の区間があれば true */
   estimated: boolean;
 }
 
@@ -254,6 +327,7 @@ export interface PlanSummary {
   date: string;
   spotCount: number;
   totalTravelMin: number;
+  method: PlanMethod;
   createdAt: ISODateTime;
 }
 
@@ -261,6 +335,33 @@ export interface Plan extends PlanSummary {
   userId: UUID;
   params: PlanParams;
   result: PlanResult;
+}
+
+/** 保存済みプランの各区間の「ナビを開始」（F-5-12）。GET /plans/{planId} で付与 */
+export interface PlanNavSegment {
+  /** items のインデックス（出発地は -1） */
+  fromIndex: number;
+  toIndex: number;
+  fromLabel: string;
+  toLabel: string;
+  navUrl: string;
+}
+
+export interface PlanWithNav extends Plan {
+  segments: PlanNavSegment[];
+}
+
+/** POST /plans/chat */
+export interface PlanChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface PlanChatResponse {
+  reply: string;
+  conditions: PlanPreferences;
+  /** 読み取れなかったとき true（画面は選択式への切り替えを案内） */
+  unclear: boolean;
 }
 
 // ---------- 通報 ----------
@@ -302,7 +403,12 @@ export interface SystemStatus {
   /** 外部サービスが設定されているか（未設定なら代替動作） */
   capabilities: {
     externalSearch: boolean;
+    /** 徒歩・車の移動時間（OpenRouteService）が使えるか。false なら概算 */
     routing: boolean;
+    /** 公共交通の移動時間（Google Routes API）が使えるか。false なら概算 */
+    transit: boolean;
+    /** AIと相談（Gemini）が使えるか */
+    ai: boolean;
     googleLogin: boolean;
     backend: "memory" | "supabase";
   };
@@ -313,6 +419,8 @@ export interface TravelTimeEntry {
   fromKey: string;
   toKey: string;
   mode: TravelMode;
+  /** 公共交通のみ使う出発時刻の区分（例 "weekday-09"）。徒歩・車は "any" */
+  timeBucket: string;
   durationSec: number;
   distanceM: number;
   fetchedAt: ISODateTime;

@@ -1,6 +1,6 @@
 /**
- * POST /api/v1/plans（F-5-7）：経路プランの保存。ログイン必須。201 Plan。
- * リストは本人のもの（他人なら 403、無ければ 404）。
+ * POST /api/v1/plans（F-5-11）：経路プランの保存。ログイン必須。201 Plan。
+ * リストは本人のもの（他人なら 403、無ければ 404）。params.method / preferences も保存する。
  */
 import { created, parseBody, route } from "@/lib/api/handler";
 import { requireProfile } from "@/lib/auth/server";

@@ -1,6 +1,7 @@
 /**
- * POST /api/v1/plans/recompute（F-5-6）：並び替え・滞在時間変更後の再計算。ログイン必須。
- * PlanResult。外部 API は呼ばない（移動時間はキャッシュ、無い区間は直線距離の概算）。
+ * POST /api/v1/plans/recompute（F-5-10）：並び替え・滞在時間変更後の再計算。ログイン必須。
+ * PlanResult（1 案）。外部 API は呼ばない（移動時間はキャッシュ、無い区間は概算）。
+ * candidate（id / kind / label）を渡すとその案を引き継ぐ。
  */
 import { json, parseBody, route } from "@/lib/api/handler";
 import { requireProfile } from "@/lib/auth/server";

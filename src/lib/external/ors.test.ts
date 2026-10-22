@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { FetchLike } from "./notify";
-import { fetchDirections, fetchMatrix } from "./ors";
+import { fetchMatrix, isOrsMode, ORS_PROFILE } from "./ors";
 import { estimateTravel, straightLine } from "./fallback";
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -65,43 +65,11 @@ describe("fetchMatrix", () => {
   });
 });
 
-describe("fetchDirections", () => {
-  it("geojson の LineString 座標を返す", async () => {
-    const fetchImpl = vi.fn<FetchLike>(async () =>
-      jsonResponse({
-        type: "FeatureCollection",
-        features: [
-          {
-            type: "Feature",
-            geometry: {
-              type: "LineString",
-              coordinates: [
-                [135.7588, 34.9858],
-                [135.77, 34.99],
-                [135.785, 34.9948],
-              ],
-            },
-          },
-        ],
-      }),
-    );
-    const coords = await fetchDirections(P, "walking", { fetchImpl, apiKey: "k" });
-    expect(coords).toHaveLength(3);
-    expect(fetchImpl.mock.calls[0][0]).toBe(
-      "https://api.openrouteservice.org/v2/directions/foot-walking/geojson",
-    );
-    const body = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body));
-    expect(body.coordinates).toEqual([
-      [135.7588, 34.9858],
-      [135.785, 34.9948],
-    ]);
-  });
-
-  it("応答が不正なら UPSTREAM_ERROR", async () => {
-    const fetchImpl = vi.fn<FetchLike>(async () => jsonResponse({ features: [] }));
-    await expect(fetchDirections(P, "walking", { fetchImpl, apiKey: "k" })).rejects.toMatchObject({
-      code: "UPSTREAM_ERROR",
-    });
+describe("ORS_PROFILE", () => {
+  it("公共交通は ORS では扱わない（徒歩・車だけ）", () => {
+    expect(ORS_PROFILE).toEqual({ walking: "foot-walking", driving: "driving-car" });
+    expect(isOrsMode("transit")).toBe(false);
+    expect(isOrsMode("walking")).toBe(true);
   });
 });
 
@@ -115,6 +83,13 @@ describe("fallback", () => {
     // 4.5km/h と 30km/h の比
     expect(walk.durationSec / drive.durationSec).toBeCloseTo(30 / 4.5, 1);
     expect(estimateTravel(P[0], P[0], "walking")).toEqual({ durationSec: 0, distanceM: 0 });
+  });
+  it("公共交通は 15km/h ＋ 待ち 10 分（v0.3 Q2）", () => {
+    const walk = estimateTravel(P[0], P[1], "walking");
+    const transit = estimateTravel(P[0], P[1], "transit");
+    expect(transit.distanceM).toBe(walk.distanceM);
+    expect(transit.durationSec).toBe(Math.round(transit.distanceM / (15000 / 3600)) + 600);
+    expect(estimateTravel(P[0], P[0], "transit")).toEqual({ durationSec: 0, distanceM: 0 });
   });
   it("straightLine は [lng, lat] の LineString", () => {
     expect(straightLine(P)).toEqual({

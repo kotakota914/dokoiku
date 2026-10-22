@@ -1,20 +1,10 @@
 /**
- * 11.4：訪問順の候補を作る。
- * - 8 か所以下：全順列
- * - 9〜10 か所：最近傍法の初期解 → 2-opt＋Or-opt（改善がなくなるまで）。途中の改善解も候補に含める。
- * 距離は移動時間行列（出発地→…→到着地）の合計で測る。
+ * 11.2 の 4：訪問順を全通り作る（最大 8! ＝ 40,320 通り。ADR-0021。2-opt は使わない）。
+ * 順番の希望（orderHints：first / last / before / after）を満たさない順はここで落とす。
  */
-import { PLAN_DEFAULTS } from "@/lib/domain/constants";
-import { spotKey } from "@/lib/utils/geo";
-import type { PlannerSpot, TravelMatrix } from "./types";
+import type { PlanPreferences } from "@/lib/domain/types";
 
-export interface SearchContext {
-  matrix: TravelMatrix;
-  originKey: string;
-  destinationKey: string | null;
-}
-
-/** 全順列（Heap's algorithm） */
+/** 全順列（Heap's algorithm）。入力の順を先頭にし、同じ入力なら同じ順で返す（決定性） */
 export function permutations<T>(arr: readonly T[]): T[][] {
   const out: T[][] = [];
   const a = arr.slice();
@@ -38,113 +28,58 @@ export function permutations<T>(arr: readonly T[]): T[][] {
   return out;
 }
 
-function legSec(matrix: TravelMatrix, from: string, to: string): number {
-  if (from === to) return 0;
-  const leg = matrix.get(`${from}|${to}`);
-  return leg ? leg.durationSec : Number.POSITIVE_INFINITY;
-}
-
-/** 出発地→順→（到着地）の移動時間の合計（秒）。無い区間があれば Infinity */
-export function pathCostSec(order: readonly PlannerSpot[], ctx: SearchContext): number {
-  let cost = 0;
-  let prev = ctx.originKey;
-  for (const s of order) {
-    const k = spotKey(s.id);
-    cost += legSec(ctx.matrix, prev, k);
-    prev = k;
-  }
-  if (ctx.destinationKey) cost += legSec(ctx.matrix, prev, ctx.destinationKey);
-  return cost;
-}
-
-/** 最近傍法：出発地から、まだ訪れていない中で一番近いスポットを順に選ぶ */
-export function nearestNeighborOrder(spots: readonly PlannerSpot[], ctx: SearchContext): PlannerSpot[] {
-  const remaining = spots.slice();
-  const order: PlannerSpot[] = [];
-  let prev = ctx.originKey;
-  while (remaining.length > 0) {
-    let bestIdx = 0;
-    let bestCost = Number.POSITIVE_INFINITY;
-    for (let i = 0; i < remaining.length; i += 1) {
-      const c = legSec(ctx.matrix, prev, spotKey(remaining[i].id));
-      if (c < bestCost) {
-        bestCost = c;
-        bestIdx = i;
-      }
-    }
-    const [next] = remaining.splice(bestIdx, 1);
-    order.push(next);
-    prev = spotKey(next.id);
-  }
-  return order;
-}
+export type OrderHint = PlanPreferences["orderHints"][number];
 
 /**
- * 2-opt（区間 [i, j] の反転）と Or-opt（長さ 1〜3 の区間の移動）を、改善がなくなるまで繰り返す。
- * 各反復で最も改善する手を採用する。改善のたびの解を順に返す（最後が最良）。
+ * 対象に含まれるスポットに関する希望だけを残す。
+ * before / after で relativeTo が対象に無い（除外・削除・時間切れ）ものは無視する。
  */
-export function twoOpt(initial: readonly PlannerSpot[], ctx: SearchContext): PlannerSpot[][] {
-  let current = initial.slice();
-  let currentCost = pathCostSec(current, ctx);
-  const history: PlannerSpot[][] = [current.slice()];
-  const n = current.length;
-  let guard = 0;
-  while (guard < 1000) {
-    guard += 1;
-    let best: PlannerSpot[] | null = null;
-    let bestCost = currentCost;
-    const consider = (candidate: PlannerSpot[]) => {
-      const cost = pathCostSec(candidate, ctx);
-      if (cost < bestCost) {
-        bestCost = cost;
-        best = candidate;
+export function applicableHints(hints: readonly OrderHint[], ids: ReadonlySet<string>): OrderHint[] {
+  return hints.filter((h) => {
+    if (!ids.has(h.spotId)) return false;
+    if (h.position === "before" || h.position === "after") {
+      return !!h.relativeTo && ids.has(h.relativeTo) && h.relativeTo !== h.spotId;
+    }
+    return true;
+  });
+}
+
+/** 訪問順（spotId の列）が順番の希望をすべて満たすか */
+export function satisfiesHints(orderIds: readonly string[], hints: readonly OrderHint[]): boolean {
+  if (hints.length === 0) return true;
+  const pos = new Map<string, number>();
+  for (let i = 0; i < orderIds.length; i += 1) pos.set(orderIds[i], i);
+  for (const h of hints) {
+    const p = pos.get(h.spotId);
+    if (p === undefined) continue;
+    switch (h.position) {
+      case "first":
+        if (p !== 0) return false;
+        break;
+      case "last":
+        if (p !== orderIds.length - 1) return false;
+        break;
+      case "before": {
+        const q = h.relativeTo ? pos.get(h.relativeTo) : undefined;
+        if (q !== undefined && !(p < q)) return false;
+        break;
       }
-    };
-    // 2-opt：反転
-    for (let i = 0; i < n - 1; i += 1) {
-      for (let j = i + 1; j < n; j += 1) {
-        consider(current.slice(0, i).concat(current.slice(i, j + 1).reverse(), current.slice(j + 1)));
+      case "after": {
+        const q = h.relativeTo ? pos.get(h.relativeTo) : undefined;
+        if (q !== undefined && !(p > q)) return false;
+        break;
       }
     }
-    // Or-opt：長さ 1〜3 の区間を別の位置へ移す
-    for (let len = 1; len <= 3 && len < n; len += 1) {
-      for (let i = 0; i + len <= n; i += 1) {
-        const segment = current.slice(i, i + len);
-        const rest = current.slice(0, i).concat(current.slice(i + len));
-        for (let k = 0; k <= rest.length; k += 1) {
-          if (k === i) continue;
-          consider(rest.slice(0, k).concat(segment, rest.slice(k)));
-        }
-      }
-    }
-    if (!best) break;
-    current = best;
-    currentCost = bestCost;
-    history.push(current.slice());
   }
-  return history;
+  return true;
 }
 
-function dedupe(orders: PlannerSpot[][]): PlannerSpot[][] {
-  const seen = new Set<string>();
-  const out: PlannerSpot[][] = [];
-  for (const o of orders) {
-    const k = o.map((s) => s.id).join(",");
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push(o);
+/** 訪問順の辞書順比較（同点のときの安定化。ADR-0021） */
+export function compareOrderIds(a: readonly string[], b: readonly string[]): number {
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i += 1) {
+    if (a[i] < b[i]) return -1;
+    if (a[i] > b[i]) return 1;
   }
-  return out;
-}
-
-/** 最近傍法 → 2-opt＋Or-opt の候補。最良（最後）を先頭に、途中の改善解も含める。スポット数に関係なく全探索しない */
-export function heuristicOrders(spots: readonly PlannerSpot[], ctx: SearchContext): PlannerSpot[][] {
-  const history = twoOpt(nearestNeighborOrder(spots, ctx), ctx);
-  return dedupe(history.slice().reverse());
-}
-
-/** 訪問順の候補。最良と思われるものを先頭に返す */
-export function candidateOrders(spots: readonly PlannerSpot[], ctx: SearchContext): PlannerSpot[][] {
-  if (spots.length <= PLAN_DEFAULTS.exhaustiveMaxSpots) return permutations(spots);
-  return heuristicOrders(spots, ctx);
+  return a.length - b.length;
 }

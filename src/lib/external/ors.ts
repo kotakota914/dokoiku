@@ -1,14 +1,12 @@
 /**
- * OpenRouteService（移動時間行列・経路形状）。サーバーからのみ呼ぶ（API キーは ORS_API_KEY）。
+ * OpenRouteService（徒歩・車の移動時間行列）。サーバーからのみ呼ぶ（API キーは ORS_API_KEY）。
  * 無料枠の回数管理は usage.ts / travel.ts 側で行い、ここは HTTP 呼び出しだけを担当する。
+ * 経路の形（directions）は取得しない（ADR-0016 / ADR-0022）。公共交通は Google Routes（google-routes.ts）。
  *
  * 公式仕様（https://openrouteservice.org/dev/#/api-docs）
- * - Matrix:      POST https://api.openrouteservice.org/v2/matrix/{profile}
- *                body { locations: [[lng, lat], ...], metrics: ["duration", "distance"] }
- *                response { durations: (number|null)[][], distances: (number|null)[][] }（秒・メートル、到達不能は null）
- * - Directions:  POST https://api.openrouteservice.org/v2/directions/{profile}/geojson
- *                body { coordinates: [[lng, lat], ...] }
- *                response GeoJSON FeatureCollection。features[0].geometry は LineString（[lng, lat]）
+ * - Matrix: POST https://api.openrouteservice.org/v2/matrix/{profile}
+ *           body { locations: [[lng, lat], ...], metrics: ["duration", "distance"] }
+ *           response { durations: (number|null)[][], distances: (number|null)[][] }（秒・メートル、到達不能は null）
  * - 認証は Authorization ヘッダーに API キーをそのまま入れる。
  * - profile は徒歩 foot-walking、車 driving-car。
  */
@@ -20,10 +18,17 @@ import type { FetchLike } from "./notify";
 
 export const ORS_BASE_URL = "https://api.openrouteservice.org";
 
-export const ORS_PROFILE: Record<TravelMode, "foot-walking" | "driving-car"> = {
+/** ORS で扱う移動手段（公共交通は扱わない） */
+export type OrsMode = Exclude<TravelMode, "transit">;
+
+export const ORS_PROFILE: Record<OrsMode, "foot-walking" | "driving-car"> = {
   walking: "foot-walking",
   driving: "driving-car",
 };
+
+export function isOrsMode(mode: TravelMode): mode is OrsMode {
+  return mode === "walking" || mode === "driving";
+}
 
 export interface OrsMatrixResult {
   /** [from][to] 秒。到達不能は null */
@@ -57,7 +62,7 @@ async function postJson<T>(path: string, body: unknown, opts: OrsOptions): Promi
       headers: {
         Authorization: apiKey,
         "Content-Type": "application/json",
-        Accept: "application/json, application/geo+json",
+        Accept: "application/json",
       },
       body: JSON.stringify(body),
       signal: controller.signal,
@@ -87,7 +92,7 @@ function toLocations(points: readonly LatLng[]): [number, number][] {
 /** 全地点間の移動時間（秒）と距離（m）の行列。1 回の呼び出しで全ペアを取る */
 export async function fetchMatrix(
   points: readonly LatLng[],
-  mode: TravelMode,
+  mode: OrsMode,
   opts: OrsOptions = {},
 ): Promise<OrsMatrixResult> {
   if (points.length < 2) return { durations: points.map(() => [0]), distances: points.map(() => [0]) };
@@ -100,32 +105,4 @@ export async function fetchMatrix(
     throw ApiError.upstream("経路サービスの応答が不正です");
   }
   return { durations: data.durations, distances: data.distances };
-}
-
-interface GeoJsonLineFeatureCollection {
-  features?: { geometry?: { type?: string; coordinates?: unknown } }[];
-}
-
-/** 地点を順にたどる経路形状（LineString の座標 [lng, lat]） */
-export async function fetchDirections(
-  points: readonly LatLng[],
-  mode: TravelMode,
-  opts: OrsOptions = {},
-): Promise<[number, number][]> {
-  if (points.length < 2) return toLocations(points);
-  const data = await postJson<GeoJsonLineFeatureCollection>(
-    `/v2/directions/${ORS_PROFILE[mode]}/geojson`,
-    { coordinates: toLocations(points), instructions: false },
-    opts,
-  );
-  const geometry = data.features?.[0]?.geometry;
-  if (!geometry || geometry.type !== "LineString" || !Array.isArray(geometry.coordinates)) {
-    throw ApiError.upstream("経路サービスの応答が不正です");
-  }
-  const coords = geometry.coordinates as unknown[];
-  const out: [number, number][] = [];
-  for (const c of coords) {
-    if (Array.isArray(c) && typeof c[0] === "number" && typeof c[1] === "number") out.push([c[0], c[1]]);
-  }
-  return out;
 }

@@ -5,8 +5,24 @@
  */
 import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { Aperture, Flame, Landmark, MapPin, Trees, Utensils, type LucideIcon } from "lucide-react";
-import { PIN_THUMB_SIZE, POPULARITY_LABELS, type Category, type Popularity } from "@/lib/domain/constants";
+import {
+  Aperture,
+  Bookmark,
+  Flame,
+  House,
+  Landmark,
+  MapPin,
+  Trees,
+  Utensils,
+  type LucideIcon,
+} from "lucide-react";
+import {
+  MAP_MODE_FADE_SEC,
+  PIN_THUMB_SIZE,
+  POPULARITY_LABELS,
+  type Category,
+  type Popularity,
+} from "@/lib/domain/constants";
 import { clusterStyleFor } from "@/lib/map/cluster";
 import type { RouteStopKind } from "@/lib/map/route";
 
@@ -154,24 +170,50 @@ export interface PinSpec {
   category: Category;
   coverThumbUrl: string | null;
   selected: boolean;
+  /** v0.3 F-1-9：選んだリストのスポットなら true（bookmark の小バッジと枠の外側の輪で強調） */
+  highlighted?: boolean;
 }
 
 interface PinState {
   spec: PinSpec;
   frame: HTMLElement;
   flame: HTMLElement | null;
+  bookmark: HTMLElement | null;
 }
+
+/** リストの強調表示（F-1-9）で読み上げに添える文言 */
+export const HIGHLIGHT_ARIA_SUFFIX = "表示中のリストのスポット";
 
 const pinStates = new WeakMap<HTMLElement, PinState>();
 
-export function pinAriaLabel(spec: Pick<PinSpec, "name" | "postCount" | "popularity">): string {
-  const base = `${spec.name}（投稿${formatCount(spec.postCount)}件）`;
-  return spec.popularity === "normal" ? base : `${base}、${POPULARITY_LABELS[spec.popularity]}`;
+export function pinAriaLabel(
+  spec: Pick<PinSpec, "name" | "postCount" | "popularity"> & { highlighted?: boolean },
+): string {
+  let label = `${spec.name}（投稿${formatCount(spec.postCount)}件）`;
+  if (spec.popularity !== "normal") label += `、${POPULARITY_LABELS[spec.popularity]}`;
+  if (spec.highlighted) label += `、${HIGHLIGHT_ARIA_SUFFIX}`;
+  return label;
 }
+
+/** リストの強調表示の輪（枠の外側）。人気度の枠色はそのまま残す */
+const HIGHLIGHT_RING = "0 0 0 3px var(--color-surface), 0 0 0 6px var(--color-primary)";
 
 function applyPinFrame(frame: HTMLElement, spec: PinSpec): void {
   frame.style.borderColor = POPULARITY_BORDER_VAR[spec.popularity];
   frame.style.borderWidth = `${spec.selected ? PIN_BORDER_SELECTED_PX : PIN_BORDER_PX}px`;
+  frame.style.boxShadow = spec.highlighted ? HIGHLIGHT_RING : "";
+}
+
+/** リストのスポットであることを示す bookmark の小バッジ（左上） */
+function createBookmarkBadge(owner: HTMLElement, className: string): HTMLElement {
+  const badge = make(
+    "span",
+    `dk-marker__bookmark pointer-events-none absolute flex h-5 w-5 items-center justify-center rounded-full bg-primary text-on-primary shadow-sm ring-2 ring-surface ${className}`,
+  );
+  badge.dataset.highlight = "true";
+  badge.setAttribute("aria-hidden", "true");
+  mountIcon(badge, Bookmark, 12, owner);
+  return badge;
 }
 
 function createFlameBadge(owner: HTMLElement): HTMLElement {
@@ -206,7 +248,7 @@ export function createPinElement(spec: PinSpec): HTMLButtonElement {
   createPhotoSlot(frame, button, spec.coverThumbUrl, spec.category, 22);
   button.append(frame);
 
-  const state: PinState = { spec, frame, flame: null };
+  const state: PinState = { spec, frame, flame: null, bookmark: null };
   pinStates.set(button, state);
   applyPin(button, state, spec, true);
   return button;
@@ -221,16 +263,18 @@ export function updatePinElement(button: HTMLElement, spec: PinSpec): void {
 
 function applyPin(button: HTMLElement, state: PinState, spec: PinSpec, force: boolean): void {
   const prev = state.spec;
+  const highlightChanged = Boolean(prev.highlighted) !== Boolean(spec.highlighted);
   if (
     force ||
     prev.name !== spec.name ||
     prev.postCount !== spec.postCount ||
-    prev.popularity !== spec.popularity
+    prev.popularity !== spec.popularity ||
+    highlightChanged
   ) {
     button.setAttribute("aria-label", pinAriaLabel(spec));
     button.title = spec.name;
   }
-  if (force || prev.popularity !== spec.popularity || prev.selected !== spec.selected) {
+  if (force || prev.popularity !== spec.popularity || prev.selected !== spec.selected || highlightChanged) {
     applyPinFrame(state.frame, spec);
     button.dataset.popularity = spec.popularity;
     if (spec.selected) button.dataset.selected = "true";
@@ -245,6 +289,15 @@ function applyPin(button: HTMLElement, state: PinState, spec: PinSpec, force: bo
   } else if (!wantFlame && state.flame) {
     state.flame.remove();
     state.flame = null;
+  }
+  if (spec.highlighted && !state.bookmark) {
+    state.bookmark = createBookmarkBadge(button, "-left-0.5 -top-0.5");
+    button.append(state.bookmark);
+    button.dataset.highlighted = "true";
+  } else if (!spec.highlighted && state.bookmark) {
+    state.bookmark.remove();
+    state.bookmark = null;
+    delete button.dataset.highlighted;
   }
   button.dataset.category = spec.category;
   const slot = photoSlots.get(state.frame);
@@ -265,6 +318,8 @@ export interface ClusterSpec {
   /** 代表スポットの名前（読み上げ用） */
   name: string;
   category: Category;
+  /** v0.3 F-1-9：束に含まれる「選んだリストのスポット」の数 */
+  highlightCount?: number;
 }
 
 interface ClusterState {
@@ -274,14 +329,22 @@ interface ClusterState {
   stack: HTMLElement;
   front: HTMLElement;
   badge: HTMLElement;
+  bookmark: HTMLElement | null;
 }
 
 const clusterStates = new WeakMap<HTMLElement, ClusterState>();
 
-export function clusterAriaLabel(spec: Pick<ClusterSpec, "name" | "postCount" | "spotCount">): string {
+export function clusterAriaLabel(
+  spec: Pick<ClusterSpec, "name" | "postCount" | "spotCount" | "highlightCount">,
+): string {
   const count = `投稿${formatCount(spec.postCount)}件`;
-  if (spec.spotCount <= 1) return `${spec.name}（${count}）`;
-  return `${spec.name} ほか${formatCount(spec.spotCount - 1)}か所（${count}）。タップで拡大`;
+  const hl = spec.highlightCount ?? 0;
+  if (spec.spotCount <= 1)
+    return hl > 0 ? `${spec.name}（${count}）、${HIGHLIGHT_ARIA_SUFFIX}` : `${spec.name}（${count}）`;
+  const base = `${spec.name} ほか${formatCount(spec.spotCount - 1)}か所（${count}）`;
+  return hl > 0
+    ? `${base}、${HIGHLIGHT_ARIA_SUFFIX}${formatCount(hl)}か所を含む。タップで拡大`
+    : `${base}。タップで拡大`;
 }
 
 /** 後ろの紙の重ね方（枚数ごとの transform） */
@@ -318,13 +381,22 @@ function buildStack(button: HTMLElement, state: ClusterState | null, spec: Clust
   badge.textContent = formatCount(spec.postCount);
   stack.append(badge);
 
+  let bookmark: HTMLElement | null = null;
+  if ((spec.highlightCount ?? 0) > 0) {
+    bookmark = createBookmarkBadge(button, "-left-1 -top-1");
+    stack.append(bookmark);
+    button.dataset.highlighted = "true";
+  } else {
+    delete button.dataset.highlighted;
+  }
+
   if (state) state.stack.replaceWith(stack);
   else button.append(stack);
   button.dataset.layers = String(layers);
   button.dataset.size = String(size);
   button.style.width = `${Math.max(size, PIN_TAP_SIZE)}px`;
   button.style.height = `${Math.max(size, PIN_TAP_SIZE)}px`;
-  return { spec, size, layers, stack, front, badge };
+  return { spec, size, layers, stack, front, badge, bookmark };
 }
 
 /** 写真の束の DOM（<button>）を作る。単独点（spotCount=1）も同じ見た目で 1 枚になる */
@@ -347,7 +419,8 @@ export function updateClusterElement(button: HTMLElement, spec: ClusterSpec): vo
   if (!state) return;
   const prev = state.spec;
   const style = clusterStyleFor(spec.postCount);
-  if (style.layers !== state.layers || style.size !== state.size) {
+  const hlChanged = (prev.highlightCount ?? 0) > 0 !== (spec.highlightCount ?? 0) > 0;
+  if (style.layers !== state.layers || style.size !== state.size || hlChanged) {
     clusterStates.set(button, buildStack(button, state, spec));
   } else {
     if (prev.postCount !== spec.postCount) {
@@ -358,7 +431,12 @@ export function updateClusterElement(button: HTMLElement, spec: ClusterSpec): vo
     if (slot) setPhoto(slot, button, spec.coverThumbUrl, spec.category, Math.round(state.size * 0.45));
     state.spec = spec;
   }
-  if (prev.name !== spec.name || prev.postCount !== spec.postCount || prev.spotCount !== spec.spotCount) {
+  if (
+    prev.name !== spec.name ||
+    prev.postCount !== spec.postCount ||
+    prev.spotCount !== spec.spotCount ||
+    (prev.highlightCount ?? 0) !== (spec.highlightCount ?? 0)
+  ) {
     button.setAttribute("aria-label", clusterAriaLabel(spec));
     button.title = spec.name;
   }
@@ -415,6 +493,78 @@ export function updateStopElement(el: HTMLElement, spec: StopSpec): void {
   }
   if (el.textContent !== spec.label) el.textContent = spec.label;
   el.setAttribute("aria-label", stopAriaLabel(spec));
+}
+
+// ---------- リストの拠点（F-1-9、F-4-8） ----------
+
+export function baseAriaLabel(label: string): string {
+  return label ? `拠点：${label}` : "拠点";
+}
+
+/** 拠点のマーカー（house アイコン＋名前）。タップ対象ではない */
+export function createBaseElement(label: string): HTMLElement {
+  const el = make(
+    "span",
+    "dk-marker dk-base pointer-events-none flex items-center gap-1 rounded-full border-2 border-surface bg-text py-1 pl-1.5 pr-2.5 text-base font-semibold leading-none text-on-primary shadow-md",
+  );
+  el.setAttribute("role", "img");
+  el.setAttribute("aria-label", baseAriaLabel(label));
+  const icon = make("span", "flex h-6 w-6 items-center justify-center rounded-full bg-primary");
+  mountIcon(icon, House, 16, el);
+  const text = make("span", "dk-base__label max-w-40 truncate");
+  text.textContent = label;
+  el.append(icon, text);
+  return el;
+}
+
+export function updateBaseElement(el: HTMLElement, label: string): void {
+  const text = el.querySelector<HTMLElement>(".dk-base__label");
+  if (text && text.textContent !== label) text.textContent = label;
+  el.setAttribute("aria-label", baseAriaLabel(label));
+}
+
+// ---------- 表示方式の切り替えの透明度アニメーション（F-1-3） ----------
+
+/** MAP_MODE_FADE_SEC（0.3 秒）をミリ秒で。視差効果を減らす設定なら 0 */
+export function modeFadeMs(): number {
+  if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return 0;
+  }
+  return Math.round(MAP_MODE_FADE_SEC * 1000);
+}
+
+/**
+ * マーカー要素を透明から表示へ切り替える。MapLibre の Marker は要素の style.opacity を自分で書き換えるため、
+ * インライン style ではなく Web Animations API（スタイルより優先される）で透明度を動かす。
+ */
+export function fadeInMarker(el: HTMLElement, ms = modeFadeMs()): void {
+  if (ms <= 0 || typeof el.animate !== "function") return;
+  el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ms, easing: "ease-out" });
+}
+
+/** マーカー要素を消える方向に切り替え、終わったら done を呼ぶ（アニメーションできなければすぐ呼ぶ） */
+export function fadeOutMarker(el: HTMLElement, done: () => void, ms = modeFadeMs()): void {
+  if (ms <= 0 || typeof el.animate !== "function") {
+    done();
+    return;
+  }
+  el.style.pointerEvents = "none";
+  el.setAttribute("aria-hidden", "true");
+  const anim = el.animate([{ opacity: 1 }, { opacity: 0 }], {
+    duration: ms,
+    easing: "ease-in",
+    fill: "forwards",
+  });
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    done();
+  };
+  anim.onfinish = finish;
+  anim.oncancel = finish;
+  // タブが非表示などでアニメーションが進まなくても必ず消す
+  setTimeout(finish, ms + 100);
 }
 
 // ---------- 現在地の点 ----------

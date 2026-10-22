@@ -10,6 +10,7 @@ import type { Category, Feature, StayDuration, TravelMode } from "@/lib/domain/t
 import type {
   ApiUsage,
   HeatPoint,
+  LatLng,
   NearbySpot,
   Page,
   Plan,
@@ -86,6 +87,11 @@ export interface SpotsRepo {
   }): Promise<Spot>;
   /** 投稿の作成・編集・削除のあとに呼ぶ（F-2-13）：post_count、like_count、代表写真、滞在時間中央値、時間帯分布、カテゴリ */
   recomputeStats(spotId: string): Promise<void>;
+  /**
+   * v0.3 F-1-5：人気度を市区町村内の相対順位で再計算する（POPULARITY_RANKING）。
+   * 投稿の作成・削除のあとと、1日1回の定期処理から呼ぶ。戻り値は更新したスポット数。
+   */
+  recomputePopularity(scope?: { prefecture?: string | null; city?: string | null }): Promise<number>;
 }
 
 export interface PostsRepo {
@@ -130,6 +136,8 @@ export interface WishlistsRepo {
   create(input: { userId: string; name: string }): Promise<Wishlist>;
   getById(id: string): Promise<WishlistDetail | null>;
   rename(id: string, name: string): Promise<Wishlist>;
+  /** v0.3 F-4-8：拠点を設定（null で解除） */
+  setBase(id: string, base: { label: string; location: LatLng } | null): Promise<Wishlist>;
   delete(id: string): Promise<void>;
   /** 既にあれば false を返す（API は 409） */
   addItem(listId: string, spotId: string): Promise<{ added: boolean; itemCount: number }>;
@@ -152,13 +160,18 @@ export interface PlansRepo {
 }
 
 export interface TravelCacheRepo {
-  /** 見つかったものだけ返す（期限切れは除く）。キーは `${fromKey}|${toKey}` */
+  /**
+   * 見つかったものだけ返す（期限切れは除く。期限は TRAVEL_CACHE_DAYS[mode]）。キーは `${fromKey}|${toKey}`。
+   * timeBucket は公共交通のみ意味を持つ（徒歩・車は "any"）
+   */
   getMany(
     pairs: { fromKey: string; toKey: string }[],
     mode: TravelMode,
+    timeBucket?: string,
   ): Promise<Map<string, TravelTimeEntry>>;
   putMany(entries: Omit<TravelTimeEntry, "fetchedAt">[]): Promise<void>;
-  purgeExpired(olderThanDays: number): Promise<number>;
+  /** mode ごとの期限（TRAVEL_CACHE_DAYS）を超えたものを削除する。olderThanDays を渡した場合はそれを優先 */
+  purgeExpired(olderThanDays?: number): Promise<number>;
 }
 
 export interface ApiUsageRepo {

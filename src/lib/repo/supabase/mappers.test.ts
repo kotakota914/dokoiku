@@ -3,10 +3,13 @@ import {
   decodeSearchCursorValue,
   encodeSearchCursorValue,
   mapApiUsage,
+  mapPlan,
   mapPlanSummary,
   mapPostView,
   mapSpot,
   mapSpotSummaryRow,
+  mapTravelTime,
+  mapWishlist,
   normalizeHistogram,
   parseEwkbPoint,
   quoteFilterValue,
@@ -196,9 +199,93 @@ describe("mapPlanSummary / mapApiUsage", () => {
         startTime: "09:00",
         endTime: "18:00",
         mode: "walking",
-        pace: "normal",
-        interests: [],
         lunchBreak: true,
+        method: "chat",
+        preferences: {
+          pace: "normal",
+          interests: [],
+          priority: "more_spots",
+          timeWindows: [],
+          orderHints: [],
+          exclude: [],
+        },
+      },
+      result: {
+        id: "c2",
+        kind: "most_spots",
+        label: "回れる場所が最も多い案",
+        reason: "",
+        items: [
+          {
+            type: "spot",
+            spotId: "a",
+            arrive: "09:20",
+            stayMin: 60,
+            depart: "10:20",
+            travelMinToNext: 15,
+            next: { mode: "walking", travelMin: 15, estimated: false, walkM: 1100 },
+            inBestTime: true,
+          },
+          {
+            type: "lunch",
+            arrive: "12:00",
+            stayMin: 60,
+            depart: "13:00",
+            travelMinToNext: 10,
+            next: { mode: "walking", travelMin: 10, estimated: false, walkM: 700 },
+          },
+          {
+            type: "spot",
+            spotId: "b",
+            arrive: "13:10",
+            stayMin: 45,
+            depart: "13:55",
+            travelMinToNext: null,
+            next: null,
+            inBestTime: false,
+          },
+        ],
+        skipped: [{ spotId: "c", reason: "time_limit" }],
+        notes: [],
+        stats: { spotCount: 2, totalTravelMin: 25, walkM: 1800, endAt: "13:55", bestTimeHits: 1 },
+        totalTravelMin: 25,
+        endAt: "13:55",
+        geometry: null,
+        travelMatrixId: "tm",
+        estimated: false,
+      },
+      total_travel_min: 25,
+      method: "chat",
+      created_at: "2026-09-01T00:00:00+00:00",
+    };
+    const summary = mapPlanSummary(row);
+    expect(summary.spotCount).toBe(2);
+    expect(summary.date).toBe("2026-11-03");
+    expect(summary.totalTravelMin).toBe(25);
+    expect(summary.method).toBe("chat");
+    // v0.3 の形はそのまま返す
+    const plan = mapPlan(row);
+    expect(plan.params).toEqual(row.params);
+    expect(plan.result).toEqual(row.result);
+  });
+
+  it("v0.1 で保存した行（method 列も候補の項目も無い）は既定値を補う", () => {
+    const row = {
+      id: "plan-old",
+      wishlist_id: "list-1",
+      user_id: "user-1",
+      params: {
+        listId: "list-1",
+        spotIds: ["a"],
+        origin: { lat: 34.98, lng: 135.75, label: "京都駅" },
+        destination: null,
+        date: "2026-11-03",
+        startTime: "09:00",
+        endTime: "18:00",
+        mode: "driving",
+        pace: "packed",
+        interests: ["history"],
+        lunchBreak: false,
       },
       result: {
         items: [
@@ -211,31 +298,41 @@ describe("mapPlanSummary / mapApiUsage", () => {
             travelMinToNext: 15,
             inBestTime: true,
           },
-          { type: "lunch", arrive: "12:00", stayMin: 60, depart: "13:00", travelMinToNext: 10 },
-          {
-            type: "spot",
-            spotId: "b",
-            arrive: "13:10",
-            stayMin: 45,
-            depart: "13:55",
-            travelMinToNext: null,
-            inBestTime: false,
-          },
         ],
-        skipped: [{ spotId: "c", reason: "time_limit" }],
-        totalTravelMin: 25,
-        endAt: "13:55",
+        skipped: [],
+        totalTravelMin: 15,
+        endAt: "10:20",
         geometry: null,
         travelMatrixId: "tm",
-        estimated: true,
+        estimated: false,
       },
-      total_travel_min: 25,
+      total_travel_min: 15,
       created_at: "2026-09-01T00:00:00+00:00",
-    };
-    const summary = mapPlanSummary(row);
-    expect(summary.spotCount).toBe(2);
-    expect(summary.date).toBe("2026-11-03");
-    expect(summary.totalTravelMin).toBe(25);
+    } as unknown as PlanRow;
+    expect(mapPlanSummary(row).method).toBe("auto");
+    const plan = mapPlan(row);
+    expect(plan.method).toBe("auto");
+    expect(plan.params.method).toBe("auto");
+    expect(plan.params.preferences).toMatchObject({
+      pace: "packed",
+      interests: ["history"],
+      priority: "fewer_moves",
+    });
+    expect(plan.result.id).toBe("c1");
+    expect(plan.result.kind).toBe("fewest_moves");
+    expect(plan.result.stats).toEqual({
+      spotCount: 1,
+      totalTravelMin: 15,
+      walkM: 0,
+      endAt: "10:20",
+      bestTimeHits: 1,
+    });
+    expect(plan.result.items[0].next).toEqual({
+      mode: "driving",
+      travelMin: 15,
+      estimated: false,
+      walkM: null,
+    });
   });
 
   it("bigint が文字列で返っても数値にする", () => {
@@ -250,6 +347,67 @@ describe("mapPlanSummary / mapApiUsage", () => {
     expect(usage.count).toBe(12);
     expect(usage.limit).toBe(2000);
     expect(usage.suspendedAt).toBeNull();
+  });
+});
+
+describe("v0.3 の列", () => {
+  it("mapWishlist は base_label / base_location（hex EWKB）を拠点にする。無ければ null", () => {
+    const base = {
+      id: "list-1",
+      user_id: "user-1",
+      name: "金沢旅行",
+      share_token: null,
+      created_at: "2026-09-01T00:00:00+00:00",
+    };
+    const withBase = mapWishlist(
+      { ...base, base_label: "金沢駅", base_location: ewkbPoint(136.6478, 36.578) },
+      3,
+    );
+    expect(withBase.baseLabel).toBe("金沢駅");
+    expect(withBase.baseLocation?.lat).toBeCloseTo(36.578, 6);
+    expect(withBase.baseLocation?.lng).toBeCloseTo(136.6478, 6);
+    expect(withBase.itemCount).toBe(3);
+    // 0003 適用前の行（列が無い）・壊れた値は拠点なし
+    expect(mapWishlist(base, 0)).toMatchObject({ baseLabel: null, baseLocation: null });
+    expect(mapWishlist({ ...base, base_label: "駅", base_location: "zz" }, 0)).toMatchObject({
+      baseLabel: null,
+      baseLocation: null,
+    });
+  });
+
+  it("mapTravelTime は time_bucket が無ければ any", () => {
+    const row = {
+      from_key: "s:a",
+      to_key: "s:b",
+      mode: "transit" as const,
+      duration_sec: 900,
+      distance_m: 3000,
+      fetched_at: "2026-09-01T00:00:00+00:00",
+    };
+    expect(mapTravelTime({ ...row, time_bucket: "weekday-09" }).timeBucket).toBe("weekday-09");
+    expect(mapTravelTime(row).timeBucket).toBe("any");
+  });
+
+  it("人気度は spots.popularity（順位）を優先し、無いときだけ件数しきい値で代替する", () => {
+    const row = {
+      id: "s1",
+      name: "兼六園",
+      lat: 36.5619,
+      lng: 136.6625,
+      category: "nature" as const,
+      post_count: 3,
+      like_count: 1,
+      prefecture: "石川県",
+      city: "金沢市",
+      cover_thumb_path: null,
+    };
+    expect(mapSpotSummaryRow({ ...row, popularity: "very_popular" }, publicUrl).popularity).toBe(
+      "very_popular",
+    );
+    expect(mapSpotSummaryRow({ ...row, post_count: 30, popularity: "normal" }, publicUrl).popularity).toBe(
+      "normal",
+    );
+    expect(mapSpotSummaryRow({ ...row, post_count: 30 }, publicUrl).popularity).toBe("very_popular");
   });
 });
 

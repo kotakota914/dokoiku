@@ -15,6 +15,8 @@ export type SpotPointProps = {
   postCount: number;
   popularity: Popularity;
   coverThumbUrl: string | null;
+  /** v0.3 F-1-9：選んだリストに入っているスポットか */
+  highlighted: boolean;
 };
 
 /** 束の集計値（map/reduce の結果） */
@@ -28,6 +30,8 @@ export type ClusterAggProps = {
   /** 代表スポットの名前とカテゴリ（写真が無いときの代替アイコンとラベル用） */
   coverName: string;
   coverCategory: Category;
+  /** v0.3 F-1-9：束に含まれる「選んだリストのスポット」の数 */
+  highlightCount: number;
 };
 
 export type SpotClusterIndex = Supercluster<SpotPointProps, ClusterAggProps>;
@@ -45,7 +49,14 @@ function isBetterCover(p: Readonly<ClusterAggProps>, acc: Readonly<ClusterAggPro
   return p.coverPostCount > acc.coverPostCount;
 }
 
-export function buildClusterIndex(spots: readonly SpotSummary[]): SpotClusterIndex {
+/**
+ * スポットから束のインデックスを作る。highlightIds（v0.3 F-1-9：選んだリストのスポット）を渡すと、
+ * 束ごとに含まれる数（highlightCount）を集計する。
+ */
+export function buildClusterIndex(
+  spots: readonly SpotSummary[],
+  highlightIds?: ReadonlySet<string> | null,
+): SpotClusterIndex {
   const index = new Supercluster<SpotPointProps, ClusterAggProps>({
     radius: CLUSTER_RADIUS_PX,
     maxZoom: MAP_ZOOM.clusterMax,
@@ -55,9 +66,11 @@ export function buildClusterIndex(spots: readonly SpotSummary[]): SpotClusterInd
       coverPostCount: p.postCount,
       coverName: p.name,
       coverCategory: p.category,
+      highlightCount: p.highlighted ? 1 : 0,
     }),
     reduce: (acc, p) => {
       acc.postCount += p.postCount;
+      acc.highlightCount += p.highlightCount;
       if (isBetterCover(p, acc)) {
         acc.coverThumbUrl = p.coverThumbUrl;
         acc.coverPostCount = p.coverPostCount;
@@ -77,6 +90,7 @@ export function buildClusterIndex(spots: readonly SpotSummary[]): SpotClusterInd
         postCount: s.postCount,
         popularity: s.popularity,
         coverThumbUrl: s.coverThumbUrl,
+        highlighted: highlightIds?.has(s.id) ?? false,
       },
     })),
   );
@@ -109,6 +123,8 @@ export interface ClusterView {
   /** 束に含まれるスポット数（単独なら 1） */
   spotCount: number;
   clusterId: number | null;
+  /** v0.3 F-1-9：束に含まれる「選んだリストのスポット」の数（単独点なら 0 か 1） */
+  highlightCount: number;
 }
 
 export function toClusterView(item: ClusterItem): ClusterView {
@@ -125,6 +141,7 @@ export function toClusterView(item: ClusterItem): ClusterView {
       category: p.coverCategory,
       spotCount: p.point_count,
       clusterId: p.cluster_id,
+      highlightCount: p.highlightCount ?? 0,
     };
   }
   const p = item.properties;
@@ -138,6 +155,7 @@ export function toClusterView(item: ClusterItem): ClusterView {
     category: p.category,
     spotCount: 1,
     clusterId: null,
+    highlightCount: p.highlighted ? 1 : 0,
   };
 }
 

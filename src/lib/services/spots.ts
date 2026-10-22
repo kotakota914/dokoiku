@@ -4,7 +4,7 @@
  * Repository の契約（src/lib/repo/types.ts）だけに依存し、"server-only" は import しない（vitest から直接テストするため）。
  */
 import { ApiError } from "@/lib/api/errors";
-import { LIMITS, MAP_ZOOM } from "@/lib/domain/constants";
+import { LIMITS, MAP_ZOOM, TILE_MAX_SPOTS, type Category } from "@/lib/domain/constants";
 import type {
   NearbyResponse,
   Page,
@@ -13,8 +13,10 @@ import type {
   SpotSummary,
   SpotsInViewResponse,
 } from "@/lib/domain/types";
+import { isHeatmapZoom } from "@/lib/map/tileCache";
+import { tileToBbox, type TileCoord } from "@/lib/map/tiles";
 import type { Paging, Repository } from "@/lib/repo/types";
-import type { NearbyQuery, SpotSearchQuery, SpotsInViewQuery } from "@/lib/validation/schemas";
+import type { NearbyQuery, SpotSearchQuery, SpotsInViewQuery, TilePathInput } from "@/lib/validation/schemas";
 
 export const SPOT_NOT_FOUND_MESSAGE = "このスポットは見つかりませんでした";
 
@@ -27,6 +29,25 @@ type SpotsDeps = Pick<Repository, "spots">;
 export async function getSpotsInView(repo: SpotsDeps, q: SpotsInViewQuery): Promise<SpotsInViewResponse> {
   const query = { bbox: q.bbox, categories: q.category, limit: LIMITS.mapMaxSpots };
   if (q.zoom <= MAP_ZOOM.heatmapMax) {
+    const points = await repo.spots.heatmap(query);
+    return { mode: "heatmap", points };
+  }
+  const spots = await repo.spots.inBbox(query);
+  return { mode: "spots", spots };
+}
+
+/**
+ * v0.3 GET /spots/tiles/{z}/{x}/{y}（F-1-2、9.3）：区画（タイル）単位でスポットを返す。
+ * z=8 はヒートマップ用の点、z=11 / 14 はスポット一覧。1 区画あたり最大 TILE_MAX_SPOTS 件（投稿数の多い順）。
+ * 同じ区画は同じ結果になるので、Route Handler 側で Cache-Control: public, max-age=60 を付ける。
+ */
+export async function getSpotsInTile(
+  repo: SpotsDeps,
+  tile: TilePathInput | TileCoord,
+  q: { category?: Category[] } = {},
+): Promise<SpotsInViewResponse> {
+  const query = { bbox: tileToBbox(tile), categories: q.category, limit: TILE_MAX_SPOTS };
+  if (isHeatmapZoom(tile.z)) {
     const points = await repo.spots.heatmap(query);
     return { mode: "heatmap", points };
   }

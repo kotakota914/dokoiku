@@ -4,6 +4,8 @@ import { PlanResultView } from "@/components/plan/PlanResultView";
 import { getCurrentUser } from "@/lib/auth/server";
 import { loginUrl, welcomeUrl } from "@/lib/auth/next-path";
 import { pageOpenGraph } from "@/lib/og/metadata";
+import type { PlanWithNav } from "@/lib/domain/types";
+import { getPlan } from "@/lib/services/plans";
 import { getRepo } from "@/lib/repo";
 import { formatDateJa } from "@/lib/utils/time";
 
@@ -25,7 +27,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-/** S-09 保存済みプラン（F-5-7）。ログイン必須・本人のみ。無い／他人のものは 404 */
+/**
+ * S-12 経路プラン（保存済み）。ログイン必須・本人のみ。無い／他人のものは 404。
+ * 各区間の「ナビを開始」は segments（GET /plans/{planId} と同じ形）を使い、無ければ画面側で作る。
+ */
 export default async function SavedPlanPage({ params }: Props) {
   const { planId } = await params;
   const path = `/plans/${encodeURIComponent(planId)}`;
@@ -33,16 +38,11 @@ export default async function SavedPlanPage({ params }: Props) {
   if (!user) redirect(loginUrl(path));
   if (!user.profile) redirect(welcomeUrl(path));
   const repo = await getRepo();
-  const plan = await repo.plans.getById(planId);
-  if (!plan || plan.userId !== user.id) notFound();
+  const owned = await repo.plans.getById(planId);
+  if (!owned || owned.userId !== user.id) notFound();
+  // GET /plans/{planId} と同じ組み立て（各区間の「ナビを開始」URL を含む）
+  const plan: PlanWithNav = await getPlan(repo, user.id, planId);
   const spots = await repo.spots.getManyByIds(plan.params.spotIds);
-  return (
-    <PlanResultView
-      params={plan.params}
-      result={plan.result}
-      spots={spots}
-      listId={plan.wishlistId}
-      saved={{ planId: plan.id }}
-    />
-  );
+  const navSegments = plan.segments;
+  return <PlanResultView plan={plan} spots={spots} navSegments={navSegments} />;
 }

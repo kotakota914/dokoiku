@@ -3,6 +3,7 @@ import {
   Aperture,
   ArrowDown,
   ArrowUp,
+  ArrowUpDown,
   Bookmark,
   BookmarkPlus,
   Calendar,
@@ -15,6 +16,7 @@ import {
   CirclePause,
   Clock,
   Coffee,
+  Columns3,
   Copy,
   Download,
   ExternalLink,
@@ -24,22 +26,27 @@ import {
   Footprints,
   GripVertical,
   Heart,
+  House,
   Image as ImageIcon,
   ImagePlus,
   Info,
   Landmark,
   List,
+  ListChecks,
   LoaderCircle,
   LocateFixed,
   LogIn,
   LogOut,
   Map as MapIcon,
   MapPin,
+  MessageCircle,
   Minus,
+  Navigation,
   Pencil,
   Plus,
   RefreshCw,
   Route,
+  Ruler,
   Save,
   Search,
   Share2,
@@ -52,6 +59,7 @@ import {
   TriangleAlert,
   User,
   Utensils,
+  WandSparkles,
   X,
 } from "lucide-react";
 import {
@@ -69,6 +77,9 @@ import { cn } from "./cn";
  * 8.1 の対応表。アイコン名（kebab-case）→ lucide-react の実体。
  * 対応表に無い用途（レビュー後に追加。docs/decisions.md）：人気 → trending-up、プラン保存 → save、
  * 非表示 → eye-off、次へ・進む → chevron-right、リンクをコピー → copy、画像を保存 → download
+ * v0.3 の追加：拠点 → house、距離 → ruler、比較 → columns-3、並べ替え → arrow-up-down、
+ * おまかせ / 重視するものを選ぶ / AIと相談 → wand-sparkles / list-checks / message-circle、ナビを開始 → navigation、
+ * 公共交通 → train-front（v0.1 から登録済み）
  */
 const ICONS = {
   map: MapIcon,
@@ -124,6 +135,15 @@ const ICONS = {
   list: List,
   image: ImageIcon,
   info: Info,
+  // v0.3 8.1 で追加（拠点・距離・比較・並べ替え・経路の作り方・ナビ）
+  house: House,
+  ruler: Ruler,
+  "columns-3": Columns3,
+  "arrow-up-down": ArrowUpDown,
+  "wand-sparkles": WandSparkles,
+  "list-checks": ListChecks,
+  "message-circle": MessageCircle,
+  navigation: Navigation,
 } as const satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;

@@ -25,6 +25,8 @@ import { notify as defaultNotify, type NotifyLevel } from "./notify";
 export interface UsageDeps {
   /** テストで時刻を固定する */
   now?: Date;
+  /** F-8-8：外部 API のモック中は回数を数えない。省略時は EXTERNAL_API_MOCK */
+  mock?: boolean;
   /** テストで通知を差し替える */
   notify?: (message: string, level?: NotifyLevel) => Promise<void>;
 }
@@ -51,6 +53,8 @@ function describe(key: UsageKey, usage: ApiUsage): string {
 /**
  * 回数を加算し、しきい値に達していれば停止にして例外を投げる。
  * すでに停止中なら加算せずに例外を投げる（F-8-2「呼び出さず」）。
+ * by は回数（Google Routes の行列は組み合わせの件数。F-8-1）。
+ * EXTERNAL_API_MOCK=true（F-8-8）のときは数えずに現在の値を返す。
  * 戻り値は加算後の使用量。
  */
 export async function checkAndCount(
@@ -66,6 +70,9 @@ export async function checkAndCount(
 
   const current = await repo.get(provider, feature, period);
   if (current?.suspendedAt) throw ApiError.suspended(feature, suspendedMessage(feature));
+  if (deps.mock ?? serverConfig.externalApiMock) {
+    return current ?? { provider, feature, period, count: 0, limit, suspendedAt: null };
+  }
 
   const usage = await repo.increment(provider, feature, period, limit, by);
   // F-8-1：年月ごとの累計も残す（日単位のキーだけ。停止判定には使わない）
@@ -100,16 +107,50 @@ export async function assertNotSuspended(
   if (await isSuspended(repo, feature, now)) throw ApiError.suspended(feature, suspendedMessage(feature));
 }
 
-/** GET /system/status */
-export async function getSystemStatus(repo: ApiUsageRepo, now = new Date()): Promise<SystemStatus> {
+/** GET /system/status の capabilities を決める設定（テストで差し替える） */
+export interface CapabilityConfig {
+  nominatimEnabled: boolean;
+  orsApiKey?: string;
+  googleRoutesApiKey?: string;
+  geminiApiKey?: string;
+  externalApiMock: boolean;
+  backend: "memory" | "supabase";
+}
+
+function currentCapabilityConfig(): CapabilityConfig {
+  return {
+    nominatimEnabled: serverConfig.nominatimEnabled,
+    orsApiKey: serverConfig.orsApiKey,
+    googleRoutesApiKey: serverConfig.googleRoutesApiKey,
+    geminiApiKey: serverConfig.geminiApiKey,
+    externalApiMock: serverConfig.externalApiMock,
+    backend: serverConfig.backend,
+  };
+}
+
+/**
+ * GET /system/status
+ * - routing：ORS のキーあり（またはモック）かつ route_planning が停止中でない。false なら徒歩・車は概算
+ * - transit：Google Routes のキーあり（またはモック）かつ route_planning_transit が停止中でない。false なら公共交通は概算
+ * - ai：Gemini のキーあり（またはモック）かつ ai_chat が停止中でない。false なら「AIと相談」は使えない
+ */
+export async function getSystemStatus(
+  repo: ApiUsageRepo,
+  now = new Date(),
+  config: CapabilityConfig = currentCapabilityConfig(),
+): Promise<SystemStatus> {
   const suspended = await repo.listSuspended([periodKey("day", now), periodKey("month", now)]);
+  const off = new Set(suspended.map((s) => s.feature));
+  const mock = config.externalApiMock;
   return {
     suspended,
     capabilities: {
-      externalSearch: serverConfig.nominatimEnabled,
-      routing: !!serverConfig.orsApiKey,
-      googleLogin: serverConfig.backend === "supabase",
-      backend: serverConfig.backend,
+      externalSearch: config.nominatimEnabled,
+      routing: (mock || !!config.orsApiKey) && !off.has("route_planning"),
+      transit: (mock || !!config.googleRoutesApiKey) && !off.has("route_planning_transit"),
+      ai: (mock || !!config.geminiApiKey) && !off.has("ai_chat"),
+      googleLogin: config.backend === "supabase",
+      backend: config.backend,
     },
   };
 }

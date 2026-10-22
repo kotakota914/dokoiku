@@ -1,9 +1,11 @@
 "use client";
 
 /**
- * 経路プランのタイムライン（F-5-4、F-5-6、F-5-8）。
- * - 出発地 → スポット（番号つき）→ 昼食休憩 → 到着地 を縦に並べ、行間に移動時間と Google マップのリンクを置く
+ * 経路案・経路プランのタイムライン（F-5-8、F-5-10、F-5-12）。
+ * - 出発地 → スポット（番号つき）→ 昼食休憩 → 到着地 を縦に並べ、行間に次までの移動手段アイコンと移動時間を置く
  *   （移動時間は次のスポット・到着地の行の直前にまとめて出し、昼食休憩の行には出さない）
+ * - 公共交通、または概算（next.estimated）の区間は「目安」と表示する。路線・乗換は表示しない（ADR-0016）
+ * - 保存済みプラン（navSegments あり）だけ、各区間に「ナビを開始」（Google マップ）を置く。保存前の案には置かない
  * - 並び替え：ドラッグ（grip-vertical ハンドル、キーボード操作も可）と上下ボタンの両方
  * - 滞在時間：「変更」→ 5 分刻みの Select
  */
@@ -26,11 +28,12 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useMemo, useState } from "react";
 import { Badge, Button, Icon, IconButton, Select, Spinner, cn, formatMinutes } from "@/components/ui";
-import type { TravelMode } from "@/lib/domain/constants";
-import type { LatLng, PlanItem, PlanPlace } from "@/lib/domain/types";
-import { googleMapsDirectionsUrl } from "@/lib/utils/geo";
+import { TRAVEL_MODE_LABELS, type TravelMode } from "@/lib/domain/constants";
+import type { LatLng, PlanItem, PlanNavSegment, PlanPlace } from "@/lib/domain/types";
 import { hhmmToMinutes } from "@/lib/utils/time";
-import { STAY_OPTIONS } from "./types";
+import { isSafeNavUrl, navAriaLabel } from "./navUrl";
+import { PlanIcon } from "./PlanIcon";
+import { STAY_OPTIONS, TRAVEL_MODE_ICONS } from "./types";
 
 export interface TimelineSpot extends LatLng {
   id: string;
@@ -44,6 +47,7 @@ export interface TimelineProps {
   destination: PlanPlace | null;
   startTime: string;
   endAt: string;
+  /** プランの移動手段（区間に next が無いときに使う） */
   mode: TravelMode;
   /** 並び替え・滞在時間の変更を受け付けるか */
   editable?: boolean;
@@ -52,12 +56,12 @@ export interface TimelineProps {
   /** 並び替え後の spot id の順 */
   onReorder?: (order: string[]) => void;
   onStayChange?: (spotId: string, stayMin: number) => void;
+  /** 保存済みプランの「ナビを開始」（F-5-12）。保存前の案では渡さない */
+  navSegments?: readonly PlanNavSegment[];
 }
 
 const LUNCH_ROW_ID = "__lunch__";
 const DELETED_SPOT_NAME = "削除されたスポット";
-
-type Point = LatLng & { name: string };
 
 type Row =
   | {
@@ -67,13 +71,22 @@ type Row =
       number: number;
       item: Extract<PlanItem, { type: "spot" }>;
       spot: TimelineSpot | null;
-      /** 直前の座標を持つ地点（Google マップのリンク元） */
-      from: Point;
     }
   | { kind: "lunch"; id: string; index: number; item: Extract<PlanItem, { type: "lunch" }> };
 
+interface SegmentInfo {
+  minutes: number | null;
+  mode: TravelMode;
+  estimated: boolean;
+}
+
 function rowId(item: PlanItem, index: number): string {
   return item.type === "spot" ? item.spotId : `${LUNCH_ROW_ID}${index}`;
+}
+
+/** 次までの移動時間（v0.3 は next.travelMin。旧データは travelMinToNext） */
+function legMinutes(item: PlanItem): number | null {
+  return item.next?.travelMin ?? item.travelMinToNext ?? null;
 }
 
 export function Timeline({
@@ -88,15 +101,11 @@ export function Timeline({
   busy = false,
   onReorder,
   onStayChange,
+  navSegments,
 }: TimelineProps) {
-  const originPoint = useMemo<Point>(
-    () => ({ lat: origin.lat, lng: origin.lng, name: origin.label || "出発地" }),
-    [origin],
-  );
-  const { rows, lastPoint } = useMemo(() => {
+  const rows = useMemo(() => {
     const out: Row[] = [];
     let n = 0;
-    let last: Point = originPoint;
     for (let index = 0; index < items.length; index += 1) {
       const item = items[index];
       if (item.type === "lunch") {
@@ -104,12 +113,17 @@ export function Timeline({
         continue;
       }
       n += 1;
-      const spot = spotsById.get(item.spotId) ?? null;
-      out.push({ kind: "spot", id: rowId(item, index), index, number: n, item, spot, from: last });
-      if (spot) last = spot;
+      out.push({
+        kind: "spot",
+        id: rowId(item, index),
+        index,
+        number: n,
+        item,
+        spot: spotsById.get(item.spotId) ?? null,
+      });
     }
-    return { rows: out, lastPoint: last };
-  }, [items, spotsById, originPoint]);
+    return out;
+  }, [items, spotsById]);
   const spotOrder = useMemo(() => rows.filter((r) => r.kind === "spot").map((r) => r.id), [rows]);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -137,54 +151,57 @@ export function Timeline({
   }
 
   /**
-   * 直前のスポット（無ければ出発地）から items[index]（index === items.length なら到着地）までの移動時間。
-   * 昼食行（travelMinToNext が 0 や null）を挟んでも、そこまでの区間の合計を次のスポットの行に出す。
+   * 直前のスポット（無ければ出発地）から items[index]（index === items.length なら到着地）までの区間。
+   * 昼食行を挟んでも、そこまでの区間の合計を次のスポットの行に出す。
    */
-  function travelBefore(index: number): number | null {
+  function segmentBefore(index: number): SegmentInfo {
     let prevSpot = index - 1;
     while (prevSpot >= 0 && items[prevSpot].type === "lunch") prevSpot -= 1;
     if (prevSpot < 0) {
       // 出発地からの最初の区間：出発時刻と最初の到着時刻の差（途中に昼食があればその分を除く）
       const first = items[0];
-      if (!first) return null;
+      if (!first) return { minutes: null, mode, estimated: mode === "transit" };
       let diff = hhmmToMinutes(first.arrive) - hhmmToMinutes(startTime);
       for (let k = 0; k < index; k += 1) {
         const it = items[k];
-        if (it.type === "lunch") diff += it.travelMinToNext ?? 0;
+        if (it.type === "lunch") diff += legMinutes(it) ?? 0;
       }
-      return diff >= 0 ? diff : null;
+      return { minutes: diff >= 0 ? diff : null, mode, estimated: mode === "transit" };
     }
-    const base = items[prevSpot].travelMinToNext;
-    if (base === null) return null;
+    const leg = items[prevSpot].next;
+    const legMode = leg?.mode ?? mode;
+    const estimated = legMode === "transit" || leg?.estimated === true;
+    const base = legMinutes(items[prevSpot]);
+    if (base === null) return { minutes: null, mode: legMode, estimated };
     let total = base;
-    for (let k = prevSpot + 1; k < index; k += 1) total += items[k].travelMinToNext ?? 0;
-    return total;
+    for (let k = prevSpot + 1; k < index; k += 1) total += legMinutes(items[k]) ?? 0;
+    return { minutes: total, mode: legMode, estimated };
+  }
+
+  function navTo(index: number): PlanNavSegment | null {
+    if (!navSegments) return null;
+    const seg =
+      index >= items.length
+        ? navSegments.find((s) => s.toIndex >= items.length)
+        : navSegments.find((s) => s.toIndex === index);
+    return seg && isSafeNavUrl(seg.navUrl) ? seg : null;
   }
 
   return (
     <div className={cn("flex flex-col", busy && "opacity-60")} aria-busy={busy || undefined}>
-      <EndpointRow icon="map-pin" label="出発地" name={origin.label || "出発地"} time={startTime} />
+      <EndpointRow label="出発地" name={origin.label || "出発地"} time={startTime} />
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
           <ol className="flex flex-col" aria-label="訪問順">
             {rows.map((row) => {
-              // 昼食行には移動時間を出さない（次のスポットの行にまとめる）
-              const segment =
-                row.kind === "lunch" ? null : row.spot ? (
-                  <TravelSegment
-                    minutes={travelBefore(row.index)}
-                    mode={mode}
-                    from={row.from}
-                    to={row.spot}
-                  />
-                ) : (
-                  <TravelSegment minutes={travelBefore(row.index)} mode={mode} />
-                );
               const position = spotOrder.indexOf(row.id);
               return (
                 <li key={row.id} className="flex flex-col">
-                  {segment}
+                  {/* 昼食行には移動時間を出さない（次のスポットの行にまとめる） */}
+                  {row.kind === "spot" ? (
+                    <TravelSegment segment={segmentBefore(row.index)} nav={navTo(row.index)} />
+                  ) : null}
                   {row.kind === "lunch" ? (
                     <LunchRow item={row.item} />
                   ) : (
@@ -211,12 +228,12 @@ export function Timeline({
       {destination ? (
         <>
           <TravelSegment
-            minutes={items.length > 0 ? travelBefore(items.length) : null}
-            mode={mode}
-            from={lastPoint}
-            to={{ lat: destination.lat, lng: destination.lng, name: destination.label || "到着地" }}
+            segment={
+              items.length > 0 ? segmentBefore(items.length) : { minutes: null, mode, estimated: false }
+            }
+            nav={navTo(items.length)}
           />
-          <EndpointRow icon="map-pin" label="到着地" name={destination.label || "到着地"} time={endAt} />
+          <EndpointRow label="到着地" name={destination.label || "到着地"} time={endAt} />
         </>
       ) : null}
       {busy ? (
@@ -231,21 +248,11 @@ export function Timeline({
 
 // ---------- 行 ----------
 
-function EndpointRow({
-  icon,
-  label,
-  name,
-  time,
-}: {
-  icon: "map-pin";
-  label: string;
-  name: string;
-  time: string;
-}) {
+function EndpointRow({ label, name, time }: { label: string; name: string; time: string }) {
   return (
     <div className="flex items-center gap-3 py-2">
       <span className="flex size-9 shrink-0 items-center justify-center rounded-full border border-border bg-surface-muted text-text-muted">
-        <Icon name={icon} size={20} />
+        <Icon name="map-pin" size={20} />
       </span>
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="text-base text-text-muted">{label}</span>
@@ -259,38 +266,32 @@ function EndpointRow({
   );
 }
 
-interface TravelSegmentProps {
-  minutes: number | null;
-  mode: TravelMode;
-  from?: Point;
-  to?: Point;
-}
-
-/** 行間の移動時間（footprints / car ＋ n 分）と Google マップのリンク（F-5-8） */
-function TravelSegment({ minutes, mode, from, to }: TravelSegmentProps) {
-  if (minutes === null && !(from && to)) return null;
+/** 行間の移動（移動手段アイコン＋移動時間、目安）と、保存済みなら「ナビを開始」 */
+function TravelSegment({ segment, nav }: { segment: SegmentInfo; nav: PlanNavSegment | null }) {
+  if (segment.minutes === null && !nav) return null;
   return (
     <div className="flex min-h-11 gap-3">
       <span aria-hidden="true" className="ml-[18px] w-px shrink-0 self-stretch bg-border" />
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2 text-base text-text-muted">
-        {minutes !== null ? (
+        {segment.minutes !== null ? (
           <span className="inline-flex items-center gap-1">
-            <Icon name={mode === "walking" ? "footprints" : "car"} size={16} />
-            移動 {formatMinutes(minutes)}
+            <Icon name={TRAVEL_MODE_ICONS[segment.mode]} size={16} />
+            <span className="sr-only">{TRAVEL_MODE_LABELS[segment.mode]}で</span>
+            移動 {formatMinutes(segment.minutes)}
+            {segment.estimated ? "（目安）" : null}
           </span>
         ) : null}
-        {from && to ? (
+        {nav ? (
           <a
-            href={googleMapsDirectionsUrl(from, to, "transit")}
+            href={nav.navUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex min-h-11 items-center gap-1 text-primary underline-offset-2 hover:underline"
+            aria-label={navAriaLabel(nav)}
+            className="inline-flex min-h-11 items-center gap-1 rounded-card border border-border bg-surface px-3 font-medium text-primary-strong hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           >
+            <PlanIcon name="navigation" size={16} />
+            ナビを開始
             <Icon name="external-link" size={16} />
-            Googleマップで経路を開く
-            <span className="sr-only">
-              （{from.name}から{to.name}へ）
-            </span>
           </a>
         ) : null}
       </div>
@@ -352,6 +353,12 @@ function SpotRow({
     });
   const [editingStay, setEditingStay] = useState(false);
   const style = { transform: CSS.Transform.toString(transform), transition };
+  // 5 分刻みの選択肢に無い滞在時間（ペース倍率など）でも現在値を選べるようにする
+  const stayOptions = STAY_OPTIONS.includes(item.stayMin)
+    ? STAY_SELECT_OPTIONS
+    : [...STAY_SELECT_OPTIONS, { value: String(item.stayMin), label: `${item.stayMin}分` }].sort(
+        (a, b) => Number(a.value) - Number(b.value),
+      );
 
   return (
     <div
@@ -398,7 +405,7 @@ function SpotRow({
                 <span>滞在時間</span>
                 <Select
                   aria-label={`${name}の滞在時間`}
-                  options={STAY_SELECT_OPTIONS}
+                  options={stayOptions}
                   value={String(item.stayMin)}
                   className="w-28"
                   onChange={(e) => {

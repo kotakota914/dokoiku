@@ -8,11 +8,12 @@ import "server-only";
  * - 権限（本人かどうか）は API 側で確認する。ここでは RLS が二重の守りになるだけで、判定はしない。
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { LIMITS, STORAGE_BUCKET } from "@/lib/domain/constants";
+import { LIMITS, STORAGE_BUCKET, TRAVEL_MODES } from "@/lib/domain/constants";
 import type { Category, Feature, TravelMode } from "@/lib/domain/types-reexport";
 import type {
   ApiUsage,
   HeatPoint,
+  LatLng,
   NearbySpot,
   Page,
   Plan,
@@ -76,6 +77,7 @@ import {
   spotToSummary,
   toEwkt,
   toNumber,
+  travelCacheCutoff,
   type ApiUsageRow,
   type HeatRow,
   type NearbyRow,
@@ -377,13 +379,17 @@ class SupabaseSpotsRepo implements SpotsRepo {
 
   /** spots テーブルの行を要約へ（代表写真を一括で引く） */
   private async summarize(client: Client, rows: SpotRow[]): Promise<SpotSummary[]> {
-    const spots = rows.map(mapSpot);
-    const covers = await this.coverPaths(client, spots.map((s) => s.coverImageId ?? "").filter(Boolean));
-    return spots.map((s) =>
+    const spots = rows.map((row) => ({ spot: mapSpot(row), popularity: row.popularity ?? null }));
+    const covers = await this.coverPaths(
+      client,
+      spots.map(({ spot }) => spot.coverImageId ?? "").filter(Boolean),
+    );
+    return spots.map(({ spot, popularity }) =>
       spotToSummary(
-        s,
-        s.coverImageId ? (covers.get(s.coverImageId)?.thumb_path ?? null) : null,
+        spot,
+        spot.coverImageId ? (covers.get(spot.coverImageId)?.thumb_path ?? null) : null,
         this.publicUrl,
+        popularity,
       ),
     );
   }
@@ -401,6 +407,7 @@ class SupabaseSpotsRepo implements SpotsRepo {
       spot,
       spot.coverImageId ? (covers.get(spot.coverImageId) ?? null) : null,
       this.publicUrl,
+      row.popularity ?? null,
     );
   }
 
@@ -476,10 +483,44 @@ class SupabaseSpotsRepo implements SpotsRepo {
 
   async recomputeStats(spotId: string): Promise<void> {
     // 統計更新はサーバー専用の処理として service role で行う（関数は security definer）
-    unwrapNullable(
-      await this.clients.admin().rpc("recompute_spot_stats", { p_spot_id: spotId }),
-      "spots.recomputeStats",
+    const admin = this.clients.admin();
+    const before = await this.popularityScopeOf(spotId);
+    unwrapNullable(await admin.rpc("recompute_spot_stats", { p_spot_id: spotId }), "spots.recomputeStats");
+    // ADR-0025：投稿数が変わったら（作成・削除・非表示）その都道府県の人気度をすぐ更新する。
+    // いいねや編集では順位は変わらないので呼ばない。取りこぼしは 1 時間ごとの Cron が埋める
+    const after = await this.popularityScopeOf(spotId);
+    if (before && after && before.post_count !== after.post_count) {
+      await this.recomputePopularity({ prefecture: after.prefecture, city: after.city });
+    }
+  }
+
+  private async popularityScopeOf(
+    spotId: string,
+  ): Promise<{ prefecture: string | null; city: string | null; post_count: number } | null> {
+    return unwrapNullable<{ prefecture: string | null; city: string | null; post_count: number }>(
+      await this.clients
+        .admin()
+        .from("spots")
+        .select("prefecture, city, post_count")
+        .eq("id", spotId)
+        .maybeSingle(),
+      "spots.popularityScopeOf",
     );
+  }
+
+  /**
+   * v0.3 F-1-5：SQL 関数 recompute_popularity（ウィンドウ関数で市区町村／都道府県内の順位を計算）を呼ぶ。
+   * scope を省略すると全件。1 時間ごとの定期処理は Supabase Cron から直接 `select recompute_popularity();` を実行する。
+   */
+  async recomputePopularity(scope?: { prefecture?: string | null; city?: string | null }): Promise<number> {
+    const updated = unwrapNullable<number>(
+      await this.clients.admin().rpc("recompute_popularity", {
+        p_prefecture: scope?.prefecture ?? null,
+        p_city: scope?.city ?? null,
+      }),
+      "spots.recomputePopularity",
+    );
+    return toNumber(updated);
   }
 }
 
@@ -771,7 +812,10 @@ class SupabaseWishlistsRepo implements WishlistsRepo {
     return sorted.map((r) => ({
       spotId: r.spot_id,
       mustVisit: Boolean(r.must_visit),
-      createdAt: mapWishlist({ ...r, id: "", user_id: "", name: "", share_token: null }, 0).createdAt,
+      createdAt: mapWishlist(
+        { ...r, id: "", user_id: "", name: "", base_label: null, base_location: null, share_token: null },
+        0,
+      ).createdAt,
       // 削除されたスポットは null（F-4 例外）
       spot: byId.get(r.spot_id) ?? null,
     }));
@@ -809,6 +853,24 @@ class SupabaseWishlistsRepo implements WishlistsRepo {
         .select("*, wishlist_items(count)")
         .single(),
       "wishlists.rename",
+    );
+    return mapWishlist(row, toNumber(row.wishlist_items?.[0]?.count));
+  }
+
+  /** v0.3 F-4-8：拠点を設定（null で解除）。base_location は geography(Point) に EWKT で書く */
+  async setBase(id: string, base: { label: string; location: LatLng } | null): Promise<Wishlist> {
+    const { client } = await this.clients.user();
+    const row = unwrap<WishlistWithCountRow>(
+      await client
+        .from("wishlists")
+        .update({
+          base_label: base ? base.label : null,
+          base_location: base ? toEwkt(base.location) : null,
+        })
+        .eq("id", id)
+        .select("*, wishlist_items(count)")
+        .single(),
+      "wishlists.setBase",
     );
     return mapWishlist(row, toNumber(row.wishlist_items?.[0]?.count));
   }
@@ -909,6 +971,7 @@ class SupabasePlansRepo implements PlansRepo {
           params: input.params,
           result: input.result,
           total_travel_min: Math.round(input.result.totalTravelMin ?? 0),
+          method: input.params.method,
         })
         .select("*")
         .single(),
@@ -952,17 +1015,20 @@ class SupabaseTravelCacheRepo implements TravelCacheRepo {
   async getMany(
     pairs: { fromKey: string; toKey: string }[],
     mode: TravelMode,
+    timeBucket = "any",
   ): Promise<Map<string, TravelTimeEntry>> {
     const result = new Map<string, TravelTimeEntry>();
     if (pairs.length === 0) return result;
     const wanted = new Set(pairs.map((p) => `${p.fromKey}|${p.toKey}`));
-    const cutoff = new Date(Date.now() - LIMITS.travelCacheDays * 24 * 60 * 60 * 1000).toISOString();
+    // 期限は mode ごと（10.2：徒歩・車は 30 日、公共交通は 7 日）
+    const cutoff = travelCacheCutoff(mode);
     const rows = unwrapNullable<TravelTimeCacheRow[]>(
       await this.clients
         .admin()
         .from("travel_time_cache")
         .select("*")
         .eq("mode", mode)
+        .eq("time_bucket", timeBucket)
         .in("from_key", Array.from(new Set(pairs.map((p) => p.fromKey))))
         .in("to_key", Array.from(new Set(pairs.map((p) => p.toKey))))
         .gte("fetched_at", cutoff),
@@ -982,6 +1048,7 @@ class SupabaseTravelCacheRepo implements TravelCacheRepo {
       from_key: e.fromKey,
       to_key: e.toKey,
       mode: e.mode,
+      time_bucket: e.timeBucket || "any",
       duration_sec: Math.round(e.durationSec),
       distance_m: Math.round(e.distanceM),
       fetched_at: now,
@@ -990,20 +1057,26 @@ class SupabaseTravelCacheRepo implements TravelCacheRepo {
       await this.clients
         .admin()
         .from("travel_time_cache")
-        .upsert(values, { onConflict: "from_key,to_key,mode" }),
+        .upsert(values, { onConflict: "from_key,to_key,mode,time_bucket" }),
       "travelCache.putMany",
     );
   }
 
-  async purgeExpired(olderThanDays: number): Promise<number> {
-    const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000).toISOString();
-    const { count, error } = await this.clients
-      .admin()
-      .from("travel_time_cache")
-      .delete({ count: "exact" })
-      .lt("fetched_at", cutoff);
-    if (error) throw new Error(`travelCache.purgeExpired: ${error.message}`);
-    return count ?? 0;
+  /** olderThanDays を省略すると mode ごとの期限（TRAVEL_CACHE_DAYS）で削除する */
+  async purgeExpired(olderThanDays?: number): Promise<number> {
+    const now = new Date();
+    let total = 0;
+    for (const mode of TRAVEL_MODES) {
+      const { count, error } = await this.clients
+        .admin()
+        .from("travel_time_cache")
+        .delete({ count: "exact" })
+        .eq("mode", mode)
+        .lt("fetched_at", travelCacheCutoff(mode, now, olderThanDays));
+      if (error) throw new Error(`travelCache.purgeExpired: ${error.message}`);
+      total += count ?? 0;
+    }
+    return total;
   }
 }
 
